@@ -138,7 +138,7 @@ export class SeedDataService {
       console.log('🌱 Seeding sample products...');
       
       for (const productData of sampleProducts) {
-        await productService.addProduct(productData);
+        await productService.createProduct(productData);
       }
 
       console.log(`✅ Successfully seeded ${sampleProducts.length} sample products!`);
@@ -232,7 +232,7 @@ export class SeedDataService {
       barcode: `TEST${Date.now()}`,
     };
 
-    return await productService.addProduct(productData);
+    return await productService.createProduct(productData);
   }
 }
 

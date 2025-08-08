@@ -809,3 +809,4 @@ class AnalyticsService implements IAnalyticsService {
 // Export singleton instance
 export const analyticsService = AnalyticsService.getInstance();
 export { AnalyticsService };
+export type { ProductAnalytics, DailySummary, TimeRangeAnalytics };
