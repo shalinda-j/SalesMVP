@@ -1,9 +1,9 @@
 import { BusinessInfo, DocumentSettings } from '../types/documents';
-import { StorageService } from './StorageService';
+import { storageService } from './StorageService';
 
 export class BusinessConfigService {
   private static instance: BusinessConfigService;
-  private storage: StorageService;
+  private storage: typeof storageService;
   private readonly BUSINESS_INFO_KEY = 'business_info';
   private readonly DOCUMENT_SETTINGS_KEY = 'document_settings';
 

@@ -12,7 +12,7 @@ import {
   ConflictError
 } from '../types/Cloud';
 import { cloudNetworkService } from './CloudNetworkService';
-import { StorageService } from './StorageService';
+import { storageService } from './StorageService';
 
 class CloudSyncService implements ICloudSyncService {
   private static instance: CloudSyncService;
@@ -433,6 +433,10 @@ class CloudSyncService implements ICloudSyncService {
     console.log(`🔀 Resolving conflict for ${conflict.entityType}:${conflict.entityId}`);
     
     try {
+      // Mark conflict as resolved
+      conflict.resolvedAt = new Date().toISOString();
+      conflict.autoResolved = conflict.resolution !== 'manual';
+
       // Apply the conflict resolution
       switch (conflict.resolution) {
         case 'use_local':
@@ -470,10 +474,6 @@ class CloudSyncService implements ICloudSyncService {
           console.log('⏳ Manual conflict resolution required');
           return;
       }
-      
-      // Mark conflict as resolved
-      conflict.resolvedAt = new Date().toISOString();
-      conflict.autoResolved = conflict.resolution !== 'manual';
       
       this.syncStats.conflictsResolved++;
       await this.saveSyncData();

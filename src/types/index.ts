@@ -8,6 +8,7 @@ export interface Product {
   cost: number;
   stock_qty: number;
   tax_rate: number;
+  category?: string;
 }
 
 export interface Sale {
@@ -42,6 +43,7 @@ export interface CreateProductInput {
   cost: number;
   stock_qty?: number;
   tax_rate?: number;
+  category?: string;
 }
 
 export interface UpdateProductInput {
@@ -52,6 +54,7 @@ export interface UpdateProductInput {
   cost?: number;
   stock_qty?: number;
   tax_rate?: number;
+  category?: string;
 }
 
 export interface CreateSaleInput {

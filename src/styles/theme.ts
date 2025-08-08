@@ -64,6 +64,6 @@ export const theme = {
     medium: 300,
     slow: 500,
   },
-};
+} as const;
 
 export type Theme = typeof theme;

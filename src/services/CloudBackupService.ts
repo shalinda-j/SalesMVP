@@ -5,7 +5,7 @@ import {
   CloudRestoreInfo,
   CloudError
 } from '../types/Cloud';
-import { StorageService } from './StorageService';
+import { storageService } from './StorageService';
 import { productService } from './ProductService';
 import { salesService } from './SimpleSalesService';
 import { authService } from './AuthService';
@@ -265,7 +265,7 @@ class CloudBackupService implements ICloudBackupService {
         
         for (const product of data.data.products) {
           try {
-            await productService.addProduct(product);
+            await productService.createProduct(product);
             restoreInfo.entitiesRestored.products++;
           } catch (error) {
             console.warn(`Failed to restore product ${product.id}:`, error);

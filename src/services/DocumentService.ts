@@ -14,11 +14,11 @@ import {
 } from '../types/documents';
 import { Sale, CartItem } from '../services/SimpleSalesService';
 import { businessConfigService } from './BusinessConfigService';
-import { StorageService } from './StorageService';
+import { storageService } from './StorageService';
 
 export class DocumentService {
   private static instance: DocumentService;
-  private storage: StorageService;
+  private storage: typeof storageService;
   private readonly RECEIPTS_KEY = 'receipts_';
   private readonly INVOICES_KEY = 'invoices_';
   private readonly TEMPLATES_KEY = 'document_templates';

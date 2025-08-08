@@ -32,6 +32,7 @@ import {
   getDeviceOptimizations,
   responsiveFont,
   responsiveSpacing,
+  scaleSpacing,
   wp,
   hp,
   getGridColumns,
