@@ -23,30 +23,30 @@
         <div class='clearfix'>
             
             <div class='fl pad1y space-right2'>
-                <span class="strong">0% </span>
+                <span class="strong">100% </span>
                 <span class="quiet">Statements</span>
-                <span class='fraction'>0/7</span>
+                <span class='fraction'>7/7</span>
             </div>
         
             
             <div class='fl pad1y space-right2'>
-                <span class="strong">0% </span>
+                <span class="strong">100% </span>
                 <span class="quiet">Branches</span>
-                <span class='fraction'>0/32</span>
+                <span class='fraction'>32/32</span>
             </div>
         
             
             <div class='fl pad1y space-right2'>
-                <span class="strong">0% </span>
+                <span class="strong">100% </span>
                 <span class="quiet">Functions</span>
-                <span class='fraction'>0/1</span>
+                <span class='fraction'>1/1</span>
             </div>
         
             
             <div class='fl pad1y space-right2'>
-                <span class="strong">0% </span>
+                <span class="strong">100% </span>
                 <span class="quiet">Lines</span>
-                <span class='fraction'>0/7</span>
+                <span class='fraction'>7/7</span>
             </div>
         
             
@@ -61,7 +61,7 @@
             </div>
         </template>
     </div>
-    <div class='status-line low'></div>
+    <div class='status-line high'></div>
     <pre><table class="coverage">
 <tr><td class="line-count quiet"><a name='L1'></a><a href='#L1'>1</a>
 <a name='L2'></a><a href='#L2'>2</a>
@@ -301,7 +301,7 @@
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-yes">1x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
@@ -314,7 +314,7 @@
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-yes">20x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
@@ -323,7 +323,7 @@
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-yes">20x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
@@ -331,12 +331,12 @@
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-yes">20x</span>
+<span class="cline-any cline-yes">20x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-yes">20x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
@@ -376,7 +376,7 @@
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-yes">1x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
@@ -512,20 +512,20 @@ interface ButtonProps {
   textStyle?: TextStyle;
 }
 &nbsp;
-export const Button: React.FC&lt;ButtonProps&gt; = <span class="cstat-no" title="statement not covered" ><span class="fstat-no" title="function not covered" >({</span></span>
+export const Button: React.FC&lt;ButtonProps&gt; = ({
   title,
   onPress,
-  variant = <span class="branch-0 cbranch-no" title="branch not covered" >'primary',</span>
-  size = <span class="branch-0 cbranch-no" title="branch not covered" >'md',</span>
-  disabled = <span class="branch-0 cbranch-no" title="branch not covered" >false,</span>
-  loading = <span class="branch-0 cbranch-no" title="branch not covered" >false,</span>
+  variant = 'primary',
+  size = 'md',
+  disabled = false,
+  loading = false,
   icon,
-  iconPosition = <span class="branch-0 cbranch-no" title="branch not covered" >'left',</span>
-  fullWidth = <span class="branch-0 cbranch-no" title="branch not covered" >false,</span>
+  iconPosition = 'left',
+  fullWidth = false,
   style,
   textStyle,
 }) =&gt; {
-  const buttonStyles = <span class="cstat-no" title="statement not covered" >[</span>
+  const buttonStyles = [
     styles.button,
     styles[variant],
     styles[size],
@@ -534,7 +534,7 @@ export const Button: React.FC&lt;ButtonProps&gt; = <span class="cstat-no" title=
     style,
   ];
 &nbsp;
-  const textStyles = <span class="cstat-no" title="statement not covered" >[</span>
+  const textStyles = [
     styles.text,
     styles[`${variant}Text`],
     styles[`${size}Text`],
@@ -542,12 +542,12 @@ export const Button: React.FC&lt;ButtonProps&gt; = <span class="cstat-no" title=
     textStyle,
   ];
 &nbsp;
-  const iconSize = <span class="cstat-no" title="statement not covered" >size === 'sm' ? 16 : size === 'md' ? 20 : 24;</span>
-  const iconColor = <span class="cstat-no" title="statement not covered" >variant === 'outline' || variant === 'ghost' </span>
+  const iconSize = size === 'sm' ? 16 : size === 'md' ? 20 : 24;
+  const iconColor = variant === 'outline' || variant === 'ghost'
     ? theme.colors.primary 
     : theme.colors.surface;
 &nbsp;
-<span class="cstat-no" title="statement not covered" >  return (</span>
+  return (
     &lt;TouchableOpacity
       style={buttonStyles}
       onPress={onPress}
@@ -587,7 +587,7 @@ export const Button: React.FC&lt;ButtonProps&gt; = <span class="cstat-no" title=
   );
 };
 &nbsp;
-const styles = <span class="cstat-no" title="statement not covered" >StyleSheet.create({</span>
+const styles = StyleSheet.create({
   button: {
     borderRadius: theme.borderRadius.md,
     alignItems: 'center',
@@ -703,7 +703,7 @@ const styles = <span class="cstat-no" title="statement not covered" >StyleSheet.
             <div class='footer quiet pad2 space-top1 center small'>
                 Code coverage generated by
                 <a href="https://istanbul.js.org/" target="_blank" rel="noopener noreferrer">istanbul</a>
-                at 2025-08-08T05:20:04.421Z
+                at 2025-08-08T06:17:53.373Z
             </div>
         <script src="../../prettify.js"></script>
         <script>

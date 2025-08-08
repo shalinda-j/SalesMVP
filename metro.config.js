@@ -6,4 +6,7 @@ const config = getDefaultConfig(__dirname, {
   isCSSEnabled: true,
 });
 
+// mengatasi masalah unstable_path di web
+config.resolver.unstable_serverRoot = '';
+
 module.exports = config;
