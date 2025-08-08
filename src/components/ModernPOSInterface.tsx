@@ -21,6 +21,7 @@ import { theme } from '../styles/theme';
 import { Card } from './ui/Card';
 import { Button } from './ui/Button';
 import { Input } from './ui/Input';
+import { BarcodeScannerModal } from './BarcodeScannerModal';
 import { 
   isTablet, 
   isMobile, 
@@ -41,6 +42,7 @@ export const ModernPOSInterface: React.FC = () => {
   const [searchQuery, setSearchQuery] = useState('');
   const [currentSale, setCurrentSale] = useState<Sale | null>(null);
   const [taxRate, setTaxRate] = useState(0.08);
+  const [isScannerVisible, setIsScannerVisible] = useState(false);
 
   // Load products on component mount
   useEffect(() => {
@@ -156,6 +158,16 @@ export const ModernPOSInterface: React.FC = () => {
     }
   };
 
+  const handleBarcodeScanned = (scannedData: string) => {
+    setIsScannerVisible(false);
+    const product = products.find(p => p.sku === scannedData);
+    if (product) {
+      addToCart(product);
+    } else {
+      Alert.alert('Product Not Found', `No product found with SKU: ${scannedData}`);
+    }
+  };
+
   // Render product item
   const renderProduct = ({ item }: { item: Product }) => (
     <Card 
@@ -268,7 +280,7 @@ export const ModernPOSInterface: React.FC = () => {
                 title="Scan Barcode"
                 variant="primary"
                 icon="barcode-outline"
-                onPress={() => {}}
+                onPress={() => setIsScannerVisible(true)}
                 style={styles.actionButton}
               />
               <Button
@@ -366,6 +378,12 @@ export const ModernPOSInterface: React.FC = () => {
           </Card>
         </View>
       </View>
+
+      <BarcodeScannerModal
+        visible={isScannerVisible}
+        onClose={() => setIsScannerVisible(false)}
+        onBarcodeScanned={handleBarcodeScanned}
+      />
     </SafeAreaView>
   );
 };

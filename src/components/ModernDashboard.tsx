@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   View,
   Text,
@@ -7,21 +7,33 @@ import {
   Dimensions,
   RefreshControl,
   StatusBar,
+  ActivityIndicator,
+  Alert,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { format } from 'date-fns';
+import { database } from '../stores/Database';
+import { Sale } from '../types';
 import { theme } from '../styles/theme';
 import { Card } from './ui/Card';
 import { Button } from './ui/Button';
-import { 
-  isTablet, 
-  isMobile, 
-  isSmallMobile, 
-  getGridColumns, 
-  wp, 
-  hp, 
+import {
+  isTablet,
+  isMobile,
+  isSmallMobile,
+  getGridColumns,
+  wp,
+  hp,
   responsiveFont,
-  responsiveSpacing 
+  responsiveSpacing,
 } from '../utils/responsive';
+
+interface SalesSummary {
+  totalSales: number;
+  totalRevenue: number;
+  averageTransaction: number;
+  transactionCount: number;
+}
 
 interface MetricCardProps {
   title: string;
@@ -88,49 +100,83 @@ const QuickAction: React.FC<QuickActionProps> = ({ title, icon, color, onPress }
 );
 
 export const ModernDashboard: React.FC = () => {
+  const [salesSummary, setSalesSummary] = useState<SalesSummary>({
+    totalSales: 0,
+    totalRevenue: 0,
+    averageTransaction: 0,
+    transactionCount: 0,
+  });
+  const [recentSales, setRecentSales] = useState<Sale[]>([]);
+  const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const [selectedPeriod, setSelectedPeriod] = useState<'today' | 'week' | 'month'>('today');
 
-  const handleRefresh = async () => {
+  const loadDashboardData = useCallback(async () => {
+    try {
+      setError(null);
+      await database.initialize();
+      const today = format(new Date(), 'yyyy-MM-dd');
+      const summary = await database.getSalesSummaryByDate(today);
+      setSalesSummary(summary);
+      const allSales = await database.getAllSales();
+      setRecentSales(allSales.slice(0, 5));
+    } catch (err) {
+      console.error('Failed to load dashboard data:', err);
+      setError('Failed to load dashboard data. Please try again.');
+      Alert.alert(
+        'Error',
+        'Failed to load dashboard data. Please check your database connection.',
+        [{ text: 'OK' }]
+      );
+    }
+  }, []);
+
+  const handleRefresh = useCallback(async () => {
     setRefreshing(true);
-    // Simulate API call
-    await new Promise(resolve => setTimeout(resolve, 1000));
+    await loadDashboardData();
     setRefreshing(false);
-  };
+  }, [loadDashboardData]);
+
+  useEffect(() => {
+    const initializeDashboard = async () => {
+      setLoading(true);
+      await loadDashboardData();
+      setLoading(false);
+    };
+
+    initializeDashboard();
+  }, [loadDashboardData]);
 
   const metrics = [
     {
-      title: 'Today\'s Sales',
-      value: '$2,847.50',
-      subtitle: 'From 43 transactions',
+      title: "Today's Sales",
+      value: `$${salesSummary.totalRevenue.toFixed(2)}`,
+      subtitle: `From ${salesSummary.transactionCount} transactions`,
       icon: 'cash' as const,
       color: theme.colors.success,
-      change: { value: 12.5, isPositive: true }
     },
     {
-      title: 'Active Products',
-      value: '247',
-      subtitle: '12 low stock',
-      icon: 'cube' as const,
-      color: theme.colors.primary,
-      change: { value: 3.2, isPositive: true }
-    },
-    {
-      title: 'Customers',
-      value: '89',
-      subtitle: 'Today',
-      icon: 'people' as const,
-      color: theme.colors.secondary,
-      change: { value: 5.1, isPositive: false }
-    },
-    {
-      title: 'Avg. Order',
-      value: '$66.22',
+      title: 'Avg. Order Value',
+      value: `$${salesSummary.averageTransaction.toFixed(2)}`,
       subtitle: 'Per transaction',
       icon: 'trending-up' as const,
       color: theme.colors.warning,
-      change: { value: 8.3, isPositive: true }
-    }
+    },
+    {
+      title: 'Total Transactions',
+      value: salesSummary.transactionCount,
+      subtitle: 'Today',
+      icon: 'receipt' as const,
+      color: theme.colors.primary,
+    },
+    {
+      title: 'Customers',
+      value: '89', // This is still hardcoded as we don't have customer data yet
+      subtitle: 'Today',
+      icon: 'people' as const,
+      color: theme.colors.secondary,
+    },
   ];
 
   const quickActions = [
@@ -160,16 +206,17 @@ export const ModernDashboard: React.FC = () => {
     }
   ];
 
-  const recentSales = [
-    { id: 1, customer: 'John Doe', amount: 84.50, time: '2:30 PM', items: 3 },
-    { id: 2, customer: 'Sarah Smith', amount: 156.00, time: '2:15 PM', items: 7 },
-    { id: 3, customer: 'Mike Johnson', amount: 42.25, time: '1:45 PM', items: 2 },
-    { id: 4, customer: 'Emily Brown', amount: 78.90, time: '1:20 PM', items: 4 },
-    { id: 5, customer: 'David Wilson', amount: 231.75, time: '12:55 PM', items: 12 }
-  ];
+  if (loading) {
+    return (
+      <View style={styles.loadingContainer}>
+        <ActivityIndicator size="large" color={theme.colors.primary} />
+        <Text style={styles.loadingText}>Loading dashboard...</Text>
+      </View>
+    );
+  }
 
   return (
-    <ScrollView 
+    <ScrollView
       style={styles.container}
       refreshControl={
         <RefreshControl refreshing={refreshing} onRefresh={handleRefresh} />
@@ -237,19 +284,26 @@ export const ModernDashboard: React.FC = () => {
           />
         </View>
 
-        <View style={styles.salesList}>
-          {recentSales.map((sale) => (
-            <View key={sale.id} style={styles.saleItem}>
-              <View style={styles.saleInfo}>
-                <Text style={styles.customerName}>{sale.customer}</Text>
-                <Text style={styles.saleDetails}>
-                  {sale.items} items • {sale.time}
-                </Text>
+        {recentSales.length === 0 ? (
+          <View style={styles.emptyState}>
+            <Ionicons name="receipt-outline" size={48} color={theme.colors.textLight} />
+            <Text style={styles.emptyStateText}>No sales recorded yet</Text>
+          </View>
+        ) : (
+          <View style={styles.salesList}>
+            {recentSales.map((sale) => (
+              <View key={sale.id} style={styles.saleItem}>
+                <View style={styles.saleInfo}>
+                  <Text style={styles.customerName}>Sale #{sale.id}</Text>
+                  <Text style={styles.saleDetails}>
+                    {format(new Date(sale.timestamp), 'h:mm a')}
+                  </Text>
+                </View>
+                <Text style={styles.saleAmount}>${sale.total.toFixed(2)}</Text>
               </View>
-              <Text style={styles.saleAmount}>${sale.amount.toFixed(2)}</Text>
-            </View>
-          ))}
-        </View>
+            ))}
+          </View>
+        )}
       </Card>
 
       {/* Sales Chart Placeholder */}
@@ -274,6 +328,17 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: theme.colors.background,
+  },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: theme.colors.background,
+  },
+  loadingText: {
+    marginTop: 16,
+    fontSize: theme.fontSize.md,
+    color: theme.colors.textSecondary,
   },
   header: {
     flexDirection: isSmallMobile ? 'column' : 'row',
@@ -431,6 +496,16 @@ const styles = StyleSheet.create({
     fontSize: theme.fontSize.md,
     fontWeight: theme.fontWeight.semibold,
     color: theme.colors.success,
+  },
+  emptyState: {
+    alignItems: 'center',
+    padding: 40,
+  },
+  emptyStateText: {
+    fontSize: theme.fontSize.md,
+    fontWeight: '500',
+    color: theme.colors.textSecondary,
+    marginTop: 16,
   },
   chartCard: {
     marginHorizontal: theme.spacing.xl,
