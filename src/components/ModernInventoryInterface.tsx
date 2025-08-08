@@ -560,16 +560,25 @@ ${Object.entries(stats.categories).map(([cat, count]) => `- ${cat}: ${count} pro
     }
   ];
 
-  const filteredProducts = sampleProducts.filter(product => {
-    const matchesSearch = product.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                         product.sku.toLowerCase().includes(searchQuery.toLowerCase());
-    
-    if (selectedFilter === 'all') return matchesSearch;
-    if (selectedFilter === 'low') return matchesSearch && product.stock <= product.lowStockThreshold && product.stock > 0;
-    if (selectedFilter === 'out') return matchesSearch && product.stock === 0;
-    
-    return matchesSearch;
-  });
+  const filteredProducts = realProducts
+    .map(p => ({
+      name: p.name,
+      sku: p.sku,
+      stock: p.stock_qty,
+      price: p.price,
+      lowStockThreshold: 10, // Assuming a default, this could be added to the product model
+      category: p.category || 'Uncategorized',
+    }))
+    .filter(product => {
+      const matchesSearch = product.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                           product.sku.toLowerCase().includes(searchQuery.toLowerCase());
+
+      if (selectedFilter === 'all') return matchesSearch;
+      if (selectedFilter === 'low') return matchesSearch && product.stock <= product.lowStockThreshold && product.stock > 0;
+      if (selectedFilter === 'out') return matchesSearch && product.stock === 0;
+
+      return matchesSearch;
+    });
 
   return (
     <ScrollView 
@@ -614,9 +623,9 @@ ${Object.entries(stats.categories).map(([cat, count]) => `- ${cat}: ${count} pro
         
         <View style={styles.filterButtons}>
           {[
-            { key: 'all', title: 'All Products', count: sampleProducts.length },
-            { key: 'low', title: 'Low Stock', count: sampleProducts.filter(p => p.stock <= p.lowStockThreshold && p.stock > 0).length },
-            { key: 'out', title: 'Out of Stock', count: sampleProducts.filter(p => p.stock === 0).length }
+            { key: 'all', title: 'All Products', count: realProducts.length },
+            { key: 'low', title: 'Low Stock', count: inventoryStats.lowStockItems },
+            { key: 'out', title: 'Out of Stock', count: inventoryStats.outOfStockItems }
           ].map((filter) => (
             <Button
               key={filter.key}
