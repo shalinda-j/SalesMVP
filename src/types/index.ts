@@ -8,6 +8,8 @@ export interface Product {
   cost: number;
   stock_qty: number;
   tax_rate: number;
+  category?: string;
+  description?: string;
 }
 
 export interface Sale {
@@ -33,6 +35,170 @@ export interface Payment {
   amount: number;
   reference?: string;
 }
+
+// Authentication and user management types
+export interface User {
+  id: string;
+  username: string;
+  email: string;
+  firstName: string;
+  lastName: string;
+  role: UserRole;
+  isActive: boolean;
+  lastLogin?: Date;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+export type UserRole = 'admin' | 'manager' | 'cashier';
+
+export interface UserPermissions {
+  // POS Operations
+  canProcessSales: boolean;
+  canRefundSales: boolean;
+  canDiscountItems: boolean;
+  canVoidTransactions: boolean;
+  
+  // Inventory Management
+  canManageProducts: boolean;
+  canViewInventory: boolean;
+  canAdjustStock: boolean;
+  canManageSuppliers: boolean;
+  
+  // Reporting & Analytics
+  canViewReports: boolean;
+  canExportData: boolean;
+  canViewSalesAnalytics: boolean;
+  
+  // System Administration
+  canManageUsers: boolean;
+  canManageSettings: boolean;
+  canAccessAuditLogs: boolean;
+  canBackupData: boolean;
+}
+
+export interface LoginCredentials {
+  username: string;
+  password: string;
+}
+
+export interface AuthSession {
+  user: User;
+  token: string;
+  expiresAt: Date;
+  permissions: UserPermissions;
+}
+
+export interface CreateUserInput {
+  username: string;
+  email: string;
+  firstName: string;
+  lastName: string;
+  role: UserRole;
+}
+
+export interface UpdateUserInput {
+  id: string;
+  username?: string;
+  email?: string;
+  firstName?: string;
+  lastName?: string;
+  role?: UserRole;
+  isActive?: boolean;
+  lastLogin?: Date;
+}
+
+export interface PasswordResetRequest {
+  email: string;
+  resetToken?: string;
+  newPassword?: string;
+}
+
+export interface AuditLog {
+  id: string;
+  userId: string;
+  action: string;
+  resource: string;
+  details?: any;
+  ipAddress?: string;
+  timestamp: Date;
+}
+
+// Role-based permission defaults
+export const ROLE_PERMISSIONS: Record<UserRole, UserPermissions> = {
+  admin: {
+    // Full access to everything
+    canProcessSales: true,
+    canRefundSales: true,
+    canDiscountItems: true,
+    canVoidTransactions: true,
+    canManageProducts: true,
+    canViewInventory: true,
+    canAdjustStock: true,
+    canManageSuppliers: true,
+    canViewReports: true,
+    canExportData: true,
+    canViewSalesAnalytics: true,
+    canManageUsers: true,
+    canManageSettings: true,
+    canAccessAuditLogs: true,
+    canBackupData: true,
+  },
+  manager: {
+    // Management level access
+    canProcessSales: true,
+    canRefundSales: true,
+    canDiscountItems: true,
+    canVoidTransactions: true,
+    canManageProducts: true,
+    canViewInventory: true,
+    canAdjustStock: true,
+    canManageSuppliers: true,
+    canViewReports: true,
+    canExportData: true,
+    canViewSalesAnalytics: true,
+    canManageUsers: false, // Cannot manage other users
+    canManageSettings: false, // Cannot change system settings
+    canAccessAuditLogs: true,
+    canBackupData: false,
+  },
+  cashier: {
+    // Basic POS operations only
+    canProcessSales: true,
+    canRefundSales: false, // Requires manager approval
+    canDiscountItems: false, // Requires manager approval
+    canVoidTransactions: false, // Requires manager approval
+    canManageProducts: false,
+    canViewInventory: true, // Can check stock levels
+    canAdjustStock: false,
+    canManageSuppliers: false,
+    canViewReports: false,
+    canExportData: false,
+    canViewSalesAnalytics: false,
+    canManageUsers: false,
+    canManageSettings: false,
+    canAccessAuditLogs: false,
+    canBackupData: false,
+  },
+};
+
+// Authentication states
+export interface AuthState {
+  isAuthenticated: boolean;
+  isLoading: boolean;
+  user: User | null;
+  permissions: UserPermissions | null;
+  error: string | null;
+}
+
+// Authentication actions
+export type AuthAction =
+  | { type: 'LOGIN_START' }
+  | { type: 'LOGIN_SUCCESS'; payload: { user: User; permissions: UserPermissions } }
+  | { type: 'LOGIN_FAILURE'; payload: { error: string } }
+  | { type: 'LOGOUT' }
+  | { type: 'UPDATE_USER'; payload: { user: User } }
+  | { type: 'CLEAR_ERROR' };
 
 // Database operation types
 export interface CreateProductInput {
@@ -138,6 +304,7 @@ export interface CameraState {
 export interface DatabaseService {
   // Database management
   initialize(): Promise<void>;
+  isInitialized(): boolean;
   getStats(): Promise<{
     totalProducts: number;
     totalSales: number;
@@ -180,6 +347,40 @@ export interface DatabaseService {
   getPayments(saleId: number): Promise<Payment[]>;
   updatePayment(id: number, amount: number, reference?: string): Promise<Payment>;
   deletePayment(id: number): Promise<boolean>;
+
+  // User management operations
+  createUser(input: CreateUserInput): Promise<User>;
+  getUser(id: string): Promise<User | null>;
+  getUserByUsername(username: string): Promise<User | null>;
+  getAllUsers(): Promise<User[]>;
+  updateUser(input: UpdateUserInput): Promise<User>;
+  deleteUser(id: string): Promise<boolean>;
+
+  // Password management
+  saveUserPassword(userId: string, passwordHash: string, salt: string): Promise<void>;
+  getUserPassword(userId: string): Promise<{ passwordHash: string; salt: string } | null>;
+
+  // Session management
+  saveAuthSession(sessionId: string, userId: string, token: string, expiresAt: Date): Promise<void>;
+  getAuthSession(token: string): Promise<{
+    id: string;
+    userId: string;
+    token: string;
+    expiresAt: Date;
+    createdAt: Date;
+  } | null>;
+  deleteAuthSession(token: string): Promise<boolean>;
+  cleanExpiredSessions(): Promise<number>;
+
+  // Audit logging
+  logAuditEvent(userId: string | null, action: string, resource: string, details?: any, ipAddress?: string): Promise<void>;
+  getAuditLogs(): Promise<AuditLog[]>;
+
+  // Business settings and user profile
+  getBusinessSettings(): Promise<BusinessSettings | null>;
+  saveBusinessSettings(settings: BusinessSettings): Promise<BusinessSettings>;
+  getUserProfile(userId: string): Promise<UserProfile | null>;
+  saveUserProfile(profile: UserProfile): Promise<UserProfile>;
 }
 
 // Utility types
@@ -206,4 +407,67 @@ export interface ScanResult {
   success: boolean;
   barcode?: string;
   error?: string;
+}
+
+// Re-export standardized POS types aligned with NRF ARTS RetailTransaction
+// See: src/types/pos.ts
+export * from './pos';
+
+// Re-export standard CartItem type for consistency
+export { CartItem } from './pos';
+
+// Business Settings and Profile Management
+export interface BusinessSettings {
+  id: string;
+  businessName: string;
+  businessLogo?: string;
+  businessAddress: string;
+  businessPhone: string;
+  businessEmail: string;
+  currency: string;
+  currencySymbol: string;
+  taxRate: number;
+  timezone: string;
+  language: string;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+export interface UserProfile {
+  id: string;
+  userId: string;
+  avatar?: string;
+  phoneNumber?: string;
+  address?: string;
+  preferences: {
+    theme: 'light' | 'dark' | 'auto';
+    notifications: boolean;
+    language: string;
+  };
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+export interface UpdateBusinessSettingsInput {
+  businessName?: string;
+  businessLogo?: string;
+  businessAddress?: string;
+  businessPhone?: string;
+  businessEmail?: string;
+  currency?: string;
+  currencySymbol?: string;
+  taxRate?: number;
+  timezone?: string;
+  language?: string;
+}
+
+export interface UpdateUserProfileInput {
+  avatar?: string;
+  phoneNumber?: string;
+  address?: string;
+  preferences?: {
+    theme?: 'light' | 'dark' | 'auto';
+    notifications?: boolean;
+    language?: string;
+  };
 }

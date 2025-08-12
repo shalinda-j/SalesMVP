@@ -10,7 +10,9 @@ import { View, Text, StyleSheet } from 'react-native';
 import 'react-native-reanimated';
 
 import { useColorScheme } from '@/components/useColorScheme';
-import { DemoAuthProvider } from '@/src/contexts/DemoAuthContext';
+import { AuthProvider } from '@/src/contexts/AuthContext';
+import { databaseInitService } from '@/src/services/DatabaseInitService';
+import { AuthScreen } from '@/src/components/AuthScreen';
 
 export {
   // Catch any errors thrown by the Layout component.
@@ -33,7 +35,7 @@ export default function RootLayout() {
 
   // Expo Router uses Error Boundaries to catch errors in the navigation tree.
   useEffect(() => {
-    if (error) throw error;
+    if (error) {throw error;}
   }, [error]);
 
   useEffect(() => {
@@ -56,16 +58,54 @@ export default function RootLayout() {
 
 function RootLayoutNav() {
   const colorScheme = useColorScheme();
+  const [dbInitialized, setDbInitialized] = useState(false);
+  const [dbError, setDbError] = useState<string | null>(null);
+
+  useEffect(() => {
+    const initializeDatabase = async () => {
+      try {
+        console.log('🚀 Initializing database...');
+        await databaseInitService.initializeApp();
+        console.log('✅ Database initialized successfully');
+        setDbInitialized(true);
+      } catch (error) {
+        console.error('❌ Database initialization failed:', error);
+        setDbError(error instanceof Error ? error.message : 'Database initialization failed');
+      }
+    };
+
+    initializeDatabase();
+  }, []);
+
+  if (dbError) {
+    return (
+      <View style={styles.loadingContainer}>
+        <Text style={styles.loadingTitle}>SalesMVP</Text>
+        <Text style={styles.errorText}>Database Error: {dbError}</Text>
+        <Text style={styles.loadingSubtitle}>Please refresh the page to try again.</Text>
+      </View>
+    );
+  }
+
+  if (!dbInitialized) {
+    return (
+      <View style={styles.loadingContainer}>
+        <Text style={styles.loadingTitle}>SalesMVP</Text>
+        <Text style={styles.loadingSubtitle}>Initializing database...</Text>
+      </View>
+    );
+  }
 
   return (
-    <DemoAuthProvider>
+    <AuthProvider>
       <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
         <Stack>
           <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
           <Stack.Screen name="modal" options={{ presentation: 'modal' }} />
+          <Stack.Screen name="auth" options={{ headerShown: false }} />
         </Stack>
       </ThemeProvider>
-    </DemoAuthProvider>
+    </AuthProvider>
   );
 }
 

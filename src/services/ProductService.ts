@@ -85,6 +85,14 @@ export class ProductService {
   }
 
   /**
+   * Backwards-compatible alias used by seeders/tests
+   */
+  public async addProduct(input: Omit<Product, 'id'>): Promise<Product> {
+    // Delegate to createProduct; input shape matches CreateProductInput
+    return this.createProduct(input as CreateProductInput);
+  }
+
+  /**
    * Update existing product
    */
   public async updateProduct(input: UpdateProductInput): Promise<Product> {

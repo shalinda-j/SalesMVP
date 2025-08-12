@@ -10,7 +10,7 @@ import {
   KeyboardAvoidingView,
   Platform 
 } from 'react-native';
-import { Product, CreateProductInput, UpdateProductInput } from '../types';
+import { Product, CreateProductInput } from '../types';
 import { productService } from '../services/ProductService';
 
 interface ProductFormProps {
@@ -43,14 +43,16 @@ export const ProductForm: React.FC<ProductFormProps> = ({
   }, [name, isEditing, sku]);
 
   const generateSku = async () => {
-    if (!name) return;
+    if (!name) {
+      return;
+    }
     
     try {
       const firstLetter = name.charAt(0).toUpperCase();
       const nextSku = await productService.generateNextSku(firstLetter);
       setSku(nextSku);
     } catch (error) {
-      console.log('Could not auto-generate SKU:', error);
+      // SKU generation failed, user can enter manually
     }
   };
 
@@ -92,7 +94,7 @@ export const ProductForm: React.FC<ProductFormProps> = ({
   };
 
   const handleSave = async () => {
-    if (!validateForm()) return;
+    if (!validateForm()) {return;}
 
     setLoading(true);
     try {

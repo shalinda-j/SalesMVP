@@ -8,7 +8,13 @@ import {
   CreateSaleInput,
   CreateSaleItemInput,
   CreatePaymentInput,
-  DatabaseService
+  DatabaseService,
+  User,
+  CreateUserInput,
+  UpdateUserInput,
+  BusinessSettings,
+  UserProfile,
+  AuditLog
 } from '../types';
 
 /**
@@ -26,6 +32,13 @@ export class WebDatabase implements DatabaseService {
     console.log('🌐 WebDatabase: Starting IndexedDB initialization...');
     
     return new Promise((resolve, reject) => {
+      // Check if we're in a browser environment
+      if (typeof window === 'undefined') {
+        console.warn('⚠️ WebDatabase: Not in browser environment, skipping initialization');
+        resolve();
+        return;
+      }
+      
       if (!window.indexedDB) {
         const error = new Error('IndexedDB is not supported in this browser');
         console.error('❌ WebDatabase:', error.message);
@@ -81,6 +94,49 @@ export class WebDatabase implements DatabaseService {
           paymentsStore.createIndex('sale_id', 'sale_id');
         }
 
+        // Create users store
+        if (!db.objectStoreNames.contains('users')) {
+          console.log('🌐 WebDatabase: Creating users store...');
+          const usersStore = db.createObjectStore('users', { keyPath: 'id' });
+          usersStore.createIndex('username', 'username', { unique: true });
+          usersStore.createIndex('email', 'email', { unique: true });
+        }
+
+        // Create user_passwords store
+        if (!db.objectStoreNames.contains('user_passwords')) {
+          console.log('🌐 WebDatabase: Creating user_passwords store...');
+          const userPasswordsStore = db.createObjectStore('user_passwords', { keyPath: 'userId' });
+        }
+
+        // Create auth_sessions store
+        if (!db.objectStoreNames.contains('auth_sessions')) {
+          console.log('🌐 WebDatabase: Creating auth_sessions store...');
+          const authSessionsStore = db.createObjectStore('auth_sessions', { keyPath: 'id' });
+          authSessionsStore.createIndex('token', 'token', { unique: true });
+          authSessionsStore.createIndex('userId', 'userId');
+        }
+
+        // Create audit_logs store
+        if (!db.objectStoreNames.contains('audit_logs')) {
+          console.log('🌐 WebDatabase: Creating audit_logs store...');
+          const auditLogsStore = db.createObjectStore('audit_logs', { keyPath: 'id' });
+          auditLogsStore.createIndex('userId', 'userId');
+          auditLogsStore.createIndex('timestamp', 'timestamp');
+        }
+
+        // Create business_settings store
+        if (!db.objectStoreNames.contains('business_settings')) {
+          console.log('🌐 WebDatabase: Creating business_settings store...');
+          const businessSettingsStore = db.createObjectStore('business_settings', { keyPath: 'id' });
+        }
+
+        // Create user_profiles store
+        if (!db.objectStoreNames.contains('user_profiles')) {
+          console.log('🌐 WebDatabase: Creating user_profiles store...');
+          const userProfilesStore = db.createObjectStore('user_profiles', { keyPath: 'id' });
+          userProfilesStore.createIndex('userId', 'userId', { unique: true });
+        }
+
         console.log('✅ WebDatabase: All IndexedDB stores created successfully');
       };
 
@@ -92,7 +148,11 @@ export class WebDatabase implements DatabaseService {
 
   private getDb(): IDBDatabase {
     if (!this.db) {
-      throw new Error('Database not initialized');
+      // If we're not in a browser environment, throw a more descriptive error
+      if (typeof window === 'undefined') {
+        throw new Error('Database not available in server-side environment');
+      }
+      throw new Error('Database not initialized. Please call initialize() first.');
     }
     return this.db;
   }
@@ -573,6 +633,13 @@ export class WebDatabase implements DatabaseService {
     return operations(this.db);
   }
 
+  /**
+   * Check if database is initialized
+   */
+  isInitialized(): boolean {
+    return this.db !== null;
+  }
+
   public async getStats(): Promise<{
     totalProducts: number;
     totalSales: number;
@@ -621,5 +688,430 @@ export class WebDatabase implements DatabaseService {
       console.error('Failed to get sales summary by date:', error);
       throw error;
     }
+  }
+
+  // User management operations
+  public async createUser(input: CreateUserInput): Promise<User> {
+    const db = this.getDb();
+    const transaction = db.transaction(['users'], 'readwrite');
+    const store = transaction.objectStore('users');
+
+    const user: User = {
+      id: `user-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+      username: input.username,
+      email: input.email,
+      firstName: input.firstName,
+      lastName: input.lastName,
+      role: input.role,
+      isActive: true,
+      createdAt: new Date(),
+      updatedAt: new Date()
+    };
+
+    return new Promise((resolve, reject) => {
+      const request = store.add(user);
+      
+      request.onsuccess = () => {
+        resolve(user);
+      };
+      
+      request.onerror = () => {
+        reject(new Error('Failed to create user'));
+      };
+    });
+  }
+
+  public async getUser(id: string): Promise<User | null> {
+    const db = this.getDb();
+    const transaction = db.transaction(['users'], 'readonly');
+    const store = transaction.objectStore('users');
+
+    return new Promise((resolve, reject) => {
+      const request = store.get(id);
+      
+      request.onsuccess = () => {
+        resolve(request.result || null);
+      };
+      
+      request.onerror = () => {
+        reject(new Error('Failed to get user'));
+      };
+    });
+  }
+
+  public async getUserByUsername(username: string): Promise<User | null> {
+    const db = this.getDb();
+    const transaction = db.transaction(['users'], 'readonly');
+    const store = transaction.objectStore('users');
+    const index = store.index('username');
+
+    return new Promise((resolve, reject) => {
+      const request = index.get(username);
+      
+      request.onsuccess = () => {
+        resolve(request.result || null);
+      };
+      
+      request.onerror = () => {
+        reject(new Error('Failed to get user by username'));
+      };
+    });
+  }
+
+  public async getAllUsers(): Promise<User[]> {
+    const db = this.getDb();
+    const transaction = db.transaction(['users'], 'readonly');
+    const store = transaction.objectStore('users');
+
+    return new Promise((resolve, reject) => {
+      const request = store.getAll();
+      
+      request.onsuccess = () => {
+        resolve(request.result || []);
+      };
+      
+      request.onerror = () => {
+        reject(new Error('Failed to get all users'));
+      };
+    });
+  }
+
+  public async updateUser(input: UpdateUserInput): Promise<User> {
+    const db = this.getDb();
+    const transaction = db.transaction(['users'], 'readwrite');
+    const store = transaction.objectStore('users');
+
+    return new Promise((resolve, reject) => {
+      const getRequest = store.get(input.id);
+      
+      getRequest.onsuccess = () => {
+        const existingUser = getRequest.result;
+        if (!existingUser) {
+          reject(new Error('User not found'));
+          return;
+        }
+
+        const updatedUser: User = {
+          ...existingUser,
+          ...input,
+          updatedAt: new Date()
+        };
+
+        const putRequest = store.put(updatedUser);
+        
+        putRequest.onsuccess = () => {
+          resolve(updatedUser);
+        };
+        
+        putRequest.onerror = () => {
+          reject(new Error('Failed to update user'));
+        };
+      };
+      
+      getRequest.onerror = () => {
+        reject(new Error('Failed to get user for update'));
+      };
+    });
+  }
+
+  public async deleteUser(id: string): Promise<boolean> {
+    const db = this.getDb();
+    const transaction = db.transaction(['users'], 'readwrite');
+    const store = transaction.objectStore('users');
+
+    return new Promise((resolve, reject) => {
+      const request = store.delete(id);
+      
+      request.onsuccess = () => {
+        resolve(true);
+      };
+      
+      request.onerror = () => {
+        reject(new Error('Failed to delete user'));
+      };
+    });
+  }
+
+  // Password management
+  public async saveUserPassword(userId: string, passwordHash: string, salt: string): Promise<void> {
+    const db = this.getDb();
+    const transaction = db.transaction(['user_passwords'], 'readwrite');
+    const store = transaction.objectStore('user_passwords');
+
+    return new Promise((resolve, reject) => {
+      const request = store.put({ userId, passwordHash, salt });
+      
+      request.onsuccess = () => {
+        resolve();
+      };
+      
+      request.onerror = () => {
+        reject(new Error('Failed to save user password'));
+      };
+    });
+  }
+
+  public async getUserPassword(userId: string): Promise<{ passwordHash: string; salt: string } | null> {
+    const db = this.getDb();
+    const transaction = db.transaction(['user_passwords'], 'readonly');
+    const store = transaction.objectStore('user_passwords');
+
+    return new Promise((resolve, reject) => {
+      const request = store.get(userId);
+      
+      request.onsuccess = () => {
+        resolve(request.result || null);
+      };
+      
+      request.onerror = () => {
+        reject(new Error('Failed to get user password'));
+      };
+    });
+  }
+
+  // Session management
+  public async saveAuthSession(sessionId: string, userId: string, token: string, expiresAt: Date): Promise<void> {
+    const db = this.getDb();
+    const transaction = db.transaction(['auth_sessions'], 'readwrite');
+    const store = transaction.objectStore('auth_sessions');
+
+    return new Promise((resolve, reject) => {
+      const request = store.put({
+        id: sessionId,
+        userId,
+        token,
+        expiresAt: expiresAt.toISOString(),
+        createdAt: new Date().toISOString()
+      });
+      
+      request.onsuccess = () => {
+        resolve();
+      };
+      
+      request.onerror = () => {
+        reject(new Error('Failed to save auth session'));
+      };
+    });
+  }
+
+  public async getAuthSession(token: string): Promise<{
+    id: string;
+    userId: string;
+    token: string;
+    expiresAt: Date;
+    createdAt: Date;
+  } | null> {
+    const db = this.getDb();
+    const transaction = db.transaction(['auth_sessions'], 'readonly');
+    const store = transaction.objectStore('auth_sessions');
+    const index = store.index('token');
+
+    return new Promise((resolve, reject) => {
+      const request = index.get(token);
+      
+      request.onsuccess = () => {
+        const result = request.result;
+        if (!result) {
+          resolve(null);
+          return;
+        }
+
+        resolve({
+          id: result.id,
+          userId: result.userId,
+          token: result.token,
+          expiresAt: new Date(result.expiresAt),
+          createdAt: new Date(result.createdAt)
+        });
+      };
+      
+      request.onerror = () => {
+        reject(new Error('Failed to get auth session'));
+      };
+    });
+  }
+
+  public async deleteAuthSession(token: string): Promise<boolean> {
+    const db = this.getDb();
+    const transaction = db.transaction(['auth_sessions'], 'readwrite');
+    const store = transaction.objectStore('auth_sessions');
+    const index = store.index('token');
+
+    return new Promise((resolve, reject) => {
+      const getRequest = index.getKey(token);
+      
+      getRequest.onsuccess = () => {
+        const key = getRequest.result;
+        if (!key) {
+          resolve(false);
+          return;
+        }
+
+        const deleteRequest = store.delete(key);
+        
+        deleteRequest.onsuccess = () => {
+          resolve(true);
+        };
+        
+        deleteRequest.onerror = () => {
+          reject(new Error('Failed to delete auth session'));
+        };
+      };
+      
+      getRequest.onerror = () => {
+        reject(new Error('Failed to get auth session key'));
+      };
+    });
+  }
+
+  public async cleanExpiredSessions(): Promise<number> {
+    const db = this.getDb();
+    const transaction = db.transaction(['auth_sessions'], 'readwrite');
+    const store = transaction.objectStore('auth_sessions');
+
+    return new Promise((resolve, reject) => {
+      const request = store.getAll();
+      
+      request.onsuccess = () => {
+        const sessions = request.result || [];
+        const now = new Date();
+        const expiredSessions = sessions.filter(session => new Date(session.expiresAt) < now);
+        
+        let deletedCount = 0;
+        expiredSessions.forEach(session => {
+          const deleteRequest = store.delete(session.id);
+          deleteRequest.onsuccess = () => {
+            deletedCount++;
+          };
+        });
+        
+        resolve(deletedCount);
+      };
+      
+      request.onerror = () => {
+        reject(new Error('Failed to clean expired sessions'));
+      };
+    });
+  }
+
+  // Audit logging
+  public async logAuditEvent(userId: string | null, action: string, resource: string, details?: any, ipAddress?: string): Promise<void> {
+    const db = this.getDb();
+    const transaction = db.transaction(['audit_logs'], 'readwrite');
+    const store = transaction.objectStore('audit_logs');
+
+    const auditLog: AuditLog = {
+      id: `audit-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+      userId: userId || '',
+      action,
+      resource,
+      details: details ? JSON.stringify(details) : null,
+      ipAddress,
+      timestamp: new Date()
+    };
+
+    return new Promise((resolve, reject) => {
+      const request = store.add(auditLog);
+      
+      request.onsuccess = () => {
+        resolve();
+      };
+      
+      request.onerror = () => {
+        reject(new Error('Failed to log audit event'));
+      };
+    });
+  }
+
+  public async getAuditLogs(): Promise<AuditLog[]> {
+    const db = this.getDb();
+    const transaction = db.transaction(['audit_logs'], 'readonly');
+    const store = transaction.objectStore('audit_logs');
+
+    return new Promise((resolve, reject) => {
+      const request = store.getAll();
+      
+      request.onsuccess = () => {
+        resolve(request.result || []);
+      };
+      
+      request.onerror = () => {
+        reject(new Error('Failed to get audit logs'));
+      };
+    });
+  }
+
+  // Business settings and user profile
+  public async getBusinessSettings(): Promise<BusinessSettings | null> {
+    const db = this.getDb();
+    const transaction = db.transaction(['business_settings'], 'readonly');
+    const store = transaction.objectStore('business_settings');
+
+    return new Promise((resolve, reject) => {
+      const request = store.get('default');
+      
+      request.onsuccess = () => {
+        resolve(request.result || null);
+      };
+      
+      request.onerror = () => {
+        reject(new Error('Failed to get business settings'));
+      };
+    });
+  }
+
+  public async saveBusinessSettings(settings: BusinessSettings): Promise<BusinessSettings> {
+    const db = this.getDb();
+    const transaction = db.transaction(['business_settings'], 'readwrite');
+    const store = transaction.objectStore('business_settings');
+
+    return new Promise((resolve, reject) => {
+      const request = store.put(settings);
+      
+      request.onsuccess = () => {
+        resolve(settings);
+      };
+      
+      request.onerror = () => {
+        reject(new Error('Failed to save business settings'));
+      };
+    });
+  }
+
+  public async getUserProfile(userId: string): Promise<UserProfile | null> {
+    const db = this.getDb();
+    const transaction = db.transaction(['user_profiles'], 'readonly');
+    const store = transaction.objectStore('user_profiles');
+    const index = store.index('userId');
+
+    return new Promise((resolve, reject) => {
+      const request = index.get(userId);
+      
+      request.onsuccess = () => {
+        resolve(request.result || null);
+      };
+      
+      request.onerror = () => {
+        reject(new Error('Failed to get user profile'));
+      };
+    });
+  }
+
+  public async saveUserProfile(profile: UserProfile): Promise<UserProfile> {
+    const db = this.getDb();
+    const transaction = db.transaction(['user_profiles'], 'readwrite');
+    const store = transaction.objectStore('user_profiles');
+
+    return new Promise((resolve, reject) => {
+      const request = store.put(profile);
+      
+      request.onsuccess = () => {
+        resolve(profile);
+      };
+      
+      request.onerror = () => {
+        reject(new Error('Failed to save user profile'));
+      };
+    });
   }
 }

@@ -53,16 +53,16 @@ export const responsiveFont = (size: number): number => {
 
 // Responsive spacing
 export const responsiveSpacing = (size: number): number => {
-  if (isSmallMobile) return size * 0.8;
-  if (isTablet) return size * 1.2;
+  if (isSmallMobile) {return size * 0.8;}
+  if (isTablet) {return size * 1.2;}
   return size;
 };
 
 // Grid columns based on screen size
 export const getGridColumns = (): number => {
-  if (isSmallMobile) return 1;
-  if (isMobile) return 2;
-  if (isTablet) return 3;
+  if (isSmallMobile) {return 1;}
+  if (isMobile) {return 2;}
+  if (isTablet) {return 3;}
   return 4;
 };
 
@@ -75,19 +75,19 @@ export const getCardWidth = (columns: number = getGridColumns()): number => {
 
 // Enhanced responsive font scaling with better readability
 export const scaleFont = (size: number): number => {
-  if (isExtraSmall) return Math.max(12, size * 0.85);
-  if (isSmall) return Math.max(14, size * 0.9);
-  if (isMedium) return size;
-  if (isLarge) return size * 1.1;
+  if (isExtraSmall) {return Math.max(12, size * 0.85);}
+  if (isSmall) {return Math.max(14, size * 0.9);}
+  if (isMedium) {return size;}
+  if (isLarge) {return size * 1.1;}
   return size * 1.15;
 };
 
 // Responsive spacing with better scaling
 export const scaleSpacing = (size: number): number => {
-  if (isExtraSmall) return size * 0.7;
-  if (isSmall) return size * 0.85;
-  if (isMedium) return size;
-  if (isLarge) return size * 1.1;
+  if (isExtraSmall) {return size * 0.7;}
+  if (isSmall) {return size * 0.85;}
+  if (isMedium) {return size;}
+  if (isLarge) {return size * 1.1;}
   return size * 1.2;
 };
 
@@ -99,8 +99,8 @@ export const TOUCH_TARGETS = {
 };
 
 export const getTouchTargetSize = (): number => {
-  if (isExtraSmall || isSmall) return TOUCH_TARGETS.comfortable;
-  if (isMedium) return TOUCH_TARGETS.comfortable;
+  if (isExtraSmall || isSmall) {return TOUCH_TARGETS.comfortable;}
+  if (isMedium) {return TOUCH_TARGETS.comfortable;}
   return TOUCH_TARGETS.spacious;
 };
 

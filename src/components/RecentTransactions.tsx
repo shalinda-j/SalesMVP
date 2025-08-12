@@ -8,17 +8,18 @@ import {
   RefreshControl,
   Alert,
 } from 'react-native';
-import { Sale, salesService } from '../services/SimpleSalesService';
+import { RetailTransaction } from '../types/pos';
+import { salesService } from '../services/SimpleSalesService';
 
 interface RecentTransactionsProps {
   limit?: number;
   showTitle?: boolean;
-  onTransactionPress?: (sale: Sale) => void;
+  onTransactionPress?: (sale: RetailTransaction) => void;
 }
 
 interface TransactionItemProps {
-  sale: Sale;
-  onPress?: (sale: Sale) => void;
+  sale: RetailTransaction;
+  onPress?: (sale: RetailTransaction) => void;
 }
 
 const TransactionItem: React.FC<TransactionItemProps> = ({ sale, onPress }) => {
@@ -30,10 +31,10 @@ const TransactionItem: React.FC<TransactionItemProps> = ({ sale, onPress }) => {
     const diffHours = Math.floor(diffMs / 3600000);
     const diffDays = Math.floor(diffMs / 86400000);
 
-    if (diffMins < 1) return 'Just now';
-    if (diffMins < 60) return `${diffMins}m ago`;
-    if (diffHours < 24) return `${diffHours}h ago`;
-    if (diffDays < 7) return `${diffDays}d ago`;
+    if (diffMins < 1) {return 'Just now';}
+    if (diffMins < 60) {return `${diffMins}m ago`;}
+    if (diffHours < 24) {return `${diffHours}h ago`;}
+    if (diffDays < 7) {return `${diffDays}d ago`;}
     
     return saleDate.toLocaleDateString();
   };
@@ -65,7 +66,7 @@ const TransactionItem: React.FC<TransactionItemProps> = ({ sale, onPress }) => {
       <View style={styles.transactionHeader}>
         <View style={styles.transactionInfo}>
           <Text style={styles.transactionId}>
-            Sale #{sale.id.toString().padStart(4, '0')}
+            Sale #{sale.id?.toString().padStart(4, '0') || 'N/A'}
           </Text>
           <Text style={styles.transactionTime}>
             {formatTime(sale.timestamp)}
@@ -74,7 +75,7 @@ const TransactionItem: React.FC<TransactionItemProps> = ({ sale, onPress }) => {
         
         <View style={styles.transactionAmount}>
           <Text style={styles.amountText}>
-            ${sale.total.toFixed(2)}
+            ${sale.totals.grandTotal.toFixed(2)}
           </Text>
           <View style={[styles.statusBadge, { backgroundColor: getStatusColor(sale.status) }]}>
             <Text style={styles.statusText}>
@@ -103,11 +104,11 @@ const TransactionItem: React.FC<TransactionItemProps> = ({ sale, onPress }) => {
 
         <View style={styles.paymentInfo}>
           <Text style={styles.paymentMethod}>
-            {getPaymentMethodIcon(sale.paymentMethod)} {sale.paymentMethod.toUpperCase()}
+            {getPaymentMethodIcon(sale.tenders[0]?.type || 'other')} {sale.tenders[0]?.type.toUpperCase() || 'N/A'}
           </Text>
-          {sale.tax > 0 && (
+          {sale.totals.taxTotal > 0 && (
             <Text style={styles.taxInfo}>
-              Tax: ${sale.tax.toFixed(2)}
+              Tax: ${sale.totals.taxTotal.toFixed(2)}
             </Text>
           )}
         </View>
@@ -121,7 +122,7 @@ export const RecentTransactions: React.FC<RecentTransactionsProps> = ({
   showTitle = true,
   onTransactionPress,
 }) => {
-  const [transactions, setTransactions] = useState<Sale[]>([]);
+  const [transactions, setTransactions] = useState<RetailTransaction[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -157,16 +158,17 @@ export const RecentTransactions: React.FC<RecentTransactionsProps> = ({
     loadTransactions();
   };
 
-  const handleTransactionPress = (sale: Sale) => {
+  const handleTransactionPress = (sale: RetailTransaction) => {
     if (onTransactionPress) {
       onTransactionPress(sale);
     } else {
       // Default action: show transaction details
       Alert.alert(
-        `Transaction #${sale.id.toString().padStart(4, '0')}`,
-        `Amount: $${sale.total.toFixed(2)}\n` +
+        `Transaction #${sale.id?.toString().padStart(4, '0') || 'N/A'}`,
+        `Amount: $${sale.totals.grandTotal.toFixed(2)}\n` +
         `Items: ${sale.items.length}\n` +
-        `Payment: ${sale.paymentMethod.toUpperCase()}\n` +
+        `Payment: ${sale.tenders[0]?.type.toUpperCase() || 'N/A'}
+` +
         `Status: ${sale.status}\n` +
         `Date: ${sale.timestamp.toLocaleString()}`,
         [{ text: 'OK' }]
@@ -226,7 +228,7 @@ export const RecentTransactions: React.FC<RecentTransactionsProps> = ({
               onPress={handleTransactionPress}
             />
           )}
-          keyExtractor={(item) => item.id.toString()}
+          keyExtractor={(item) => item.id?.toString() || Math.random().toString()}
           refreshControl={
             <RefreshControl refreshing={refreshing} onRefresh={handleRefresh} />
           }

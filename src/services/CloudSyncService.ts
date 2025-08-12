@@ -12,7 +12,7 @@ import {
   ConflictError
 } from '../types/Cloud';
 import { cloudNetworkService } from './CloudNetworkService';
-import { StorageService } from './StorageService';
+import { storageService } from './StorageService';
 
 class CloudSyncService implements ICloudSyncService {
   private static instance: CloudSyncService;
@@ -102,10 +102,10 @@ class CloudSyncService implements ICloudSyncService {
   }
 
   private async getDeviceId(): Promise<string> {
-    let deviceId = await StorageService.getItem('device_id');
+    let deviceId = await storageService.getItem('device_id');
     if (!deviceId) {
       deviceId = `device_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-      await StorageService.setItem('device_id', deviceId);
+      await storageService.setItem('device_id', deviceId);
     }
     return deviceId;
   }
@@ -135,13 +135,13 @@ class CloudSyncService implements ICloudSyncService {
   private async loadSyncData(): Promise<void> {
     try {
       // Load sync stats
-      const savedStats = await StorageService.getItem('sync_stats');
+      const savedStats = await storageService.getItem('sync_stats');
       if (savedStats) {
         this.syncStats = { ...this.syncStats, ...JSON.parse(savedStats) };
       }
       
       // Load sync queue
-      const savedQueue = await StorageService.getItem('sync_queue');
+      const savedQueue = await storageService.getItem('sync_queue');
       if (savedQueue) {
         const queueData = JSON.parse(savedQueue) as SyncQueueItem[];
         queueData.forEach(item => {
@@ -158,8 +158,8 @@ class CloudSyncService implements ICloudSyncService {
 
   private async saveSyncData(): Promise<void> {
     try {
-      await StorageService.setItem('sync_stats', JSON.stringify(this.syncStats));
-      await StorageService.setItem('sync_queue', JSON.stringify(Array.from(this.syncQueue.values())));
+      await storageService.setItem('sync_stats', JSON.stringify(this.syncStats));
+      await storageService.setItem('sync_queue', JSON.stringify(Array.from(this.syncQueue.values())));
     } catch (error) {
       console.error('Failed to save sync data:', error);
     }
@@ -193,9 +193,11 @@ class CloudSyncService implements ICloudSyncService {
     console.log(`⬆️ Syncing up ${data.length} ${entityType} items`);
     const startTime = Date.now();
     
+    let operations: SyncOperation[] = []; // Declare here
+
     try {
       // Create sync operations for each item
-      const operations = data.map(item => this.createSyncOperation('create', entityType, item));
+      operations = data.map(item => this.createSyncOperation('create', entityType, item));
       
       // Add to queue
       for (const operation of operations) {
@@ -217,7 +219,19 @@ class CloudSyncService implements ICloudSyncService {
       return this.syncStats;
     } catch (error) {
       console.error(`Failed to sync up ${entityType}:`, error);
-      throw new SyncError(`Sync up failed for ${entityType}`, operations[0]);
+      const dummyOperation: SyncOperation = {
+        id: 'dummy-sync-error',
+        operation: 'create',
+        entityType: entityType,
+        entityId: 'unknown',
+        timestamp: new Date().toISOString(),
+        deviceId: this.deviceInfo?.deviceId || 'unknown',
+        userId: 'unknown',
+        status: 'failed',
+        retryCount: 0,
+        errorMessage: String(error)
+      };
+      throw new SyncError(`Sync up failed for ${entityType}`, operations[0] || dummyOperation);
     }
   }
 
@@ -445,7 +459,7 @@ class CloudSyncService implements ICloudSyncService {
           
         case 'use_cloud':
           // Keep cloud version, update local storage
-          await StorageService.setItem(
+          await storageService.setItem(
             `${conflict.entityType}_${conflict.entityId}`,
             JSON.stringify(conflict.cloudVersion)
           );
@@ -454,7 +468,7 @@ class CloudSyncService implements ICloudSyncService {
         case 'merge':
           // Use merged data
           if (conflict.resolvedData) {
-            await StorageService.setItem(
+            await storageService.setItem(
               `${conflict.entityType}_${conflict.entityId}`,
               JSON.stringify(conflict.resolvedData)
             );
@@ -473,7 +487,7 @@ class CloudSyncService implements ICloudSyncService {
       
       // Mark conflict as resolved
       conflict.resolvedAt = new Date().toISOString();
-      conflict.autoResolved = conflict.resolution !== 'manual';
+      conflict.autoResolved = (conflict.resolution as string) !== 'manual';
       
       this.syncStats.conflictsResolved++;
       await this.saveSyncData();
@@ -491,7 +505,7 @@ class CloudSyncService implements ICloudSyncService {
     this.ensureInitialized();
     
     try {
-      const conflicts = await StorageService.getItem('sync_conflicts');
+      const conflicts = await storageService.getItem('sync_conflicts');
       return conflicts ? JSON.parse(conflicts) : [];
     } catch (error) {
       console.error('Failed to get conflicts:', error);
@@ -519,7 +533,7 @@ class CloudSyncService implements ICloudSyncService {
     
     try {
       // In a real implementation, this would register with cloud database
-      await StorageService.setItem('device_info', JSON.stringify(info));
+      await storageService.setItem('device_info', JSON.stringify(info));
       console.log(`📱 Device registered: ${info.deviceName} (${info.platform})`);
     } catch (error) {
       console.error('Failed to register device:', error);

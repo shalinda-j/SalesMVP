@@ -25,112 +25,112 @@ export class SeedDataService {
       const sampleProducts: Omit<Product, 'id'>[] = [
         {
           name: 'Premium Coffee Blend',
-          sku: 'COFFEE-001',
+          sku: 'COFFEE001',
           price: 12.99,
           cost: 6.50,
           stock_qty: 50,
           category: 'Beverages',
           description: 'Rich and aromatic coffee blend perfect for morning starts',
-          barcode: '1234567890123',
+          // barcode: '1234567890123', // Not part of Product interface
           tax_rate: 0.08,
         },
         {
           name: 'Organic Green Tea',
-          sku: 'TEA-002',
+          sku: 'TEA002',
           price: 8.50,
           cost: 4.25,
           stock_qty: 30,
           category: 'Beverages',
           description: 'Refreshing organic green tea with natural antioxidants',
-          barcode: '1234567890124',
+          // barcode: '1234567890124', // Not part of Product interface
           tax_rate: 0.08,
         },
         {
           name: 'Artisan Chocolate Bar',
-          sku: 'CHOC-003',
+          sku: 'CHOC003',
           price: 6.75,
           cost: 3.00,
           stock_qty: 25,
           category: 'Snacks',
           description: '70% dark chocolate crafted by local artisans',
-          barcode: '1234567890125',
+          // barcode: '1234567890125', // Not part of Product interface
           tax_rate: 0.08,
         },
         {
           name: 'Fresh Croissant',
-          sku: 'BAKERY-004',
+          sku: 'BAKERY004',
           price: 3.25,
           cost: 1.50,
           stock_qty: 15,
           category: 'Bakery',
           description: 'Buttery, flaky croissant baked fresh daily',
-          barcode: '1234567890126',
+          // barcode: '1234567890126', // Not part of Product interface
           tax_rate: 0.08,
         },
         {
           name: 'Wireless Bluetooth Headphones',
-          sku: 'TECH-005',
+          sku: 'TECH005',
           price: 89.99,
           cost: 45.00,
           stock_qty: 8,
           category: 'Electronics',
           description: 'High-quality wireless headphones with noise cancellation',
-          barcode: '1234567890127',
+          // barcode: '1234567890127', // Not part of Product interface
           tax_rate: 0.08,
         },
         {
           name: 'Notebook - Lined',
-          sku: 'STAT-006',
+          sku: 'STAT006',
           price: 4.50,
           cost: 2.25,
           stock_qty: 40,
           category: 'Stationery',
           description: 'A5 lined notebook with durable cover',
-          barcode: '1234567890128',
+          // barcode: '1234567890128', // Not part of Product interface
           tax_rate: 0.08,
         },
         {
           name: 'Energy Drink',
-          sku: 'DRINK-007',
+          sku: 'DRINK007',
           price: 2.99,
           cost: 1.20,
           stock_qty: 60,
           category: 'Beverages',
           description: 'Natural energy drink with vitamins and caffeine',
-          barcode: '1234567890129',
+          // barcode: '1234567890129', // Not part of Product interface
           tax_rate: 0.08,
         },
         {
           name: 'Protein Bar - Vanilla',
-          sku: 'HEALTH-008',
+          sku: 'HEALTH008',
           price: 3.75,
           cost: 1.80,
           stock_qty: 35,
           category: 'Health',
           description: '20g protein bar with natural vanilla flavoring',
-          barcode: '1234567890130',
+          // barcode: '1234567890130', // Not part of Product interface
           tax_rate: 0.08,
         },
         {
           name: 'USB-C Charging Cable',
-          sku: 'TECH-009',
+          sku: 'TECH009',
           price: 15.99,
           cost: 8.00,
           stock_qty: 20,
           category: 'Electronics',
           description: '2-meter USB-C fast charging cable',
-          barcode: '1234567890131',
+          // barcode: '1234567890131', // Not part of Product interface
           tax_rate: 0.08,
         },
         {
           name: 'Hand Sanitizer',
-          sku: 'CARE-010',
+          sku: 'CARE010',
           price: 4.25,
           cost: 2.10,
           stock_qty: 45,
           category: 'Personal Care',
           description: '70% alcohol hand sanitizer - 250ml',
-          barcode: '1234567890132',
+          // barcode: '1234567890132', // Not part of Product interface
           tax_rate: 0.08,
         },
       ];
@@ -212,8 +212,8 @@ export class SeedDataService {
   // Helper method to get sample product SKUs for testing
   getSampleSkus(): string[] {
     return [
-      'COFFEE-001', 'TEA-002', 'CHOC-003', 'BAKERY-004', 'TECH-005',
-      'STAT-006', 'DRINK-007', 'HEALTH-008', 'TECH-009', 'CARE-010'
+      'COFFEE001', 'TEA002', 'CHOC003', 'BAKERY004', 'TECH005',
+      'STAT006', 'DRINK007', 'HEALTH008', 'TECH009', 'CARE010'
     ];
   }
 
@@ -229,7 +229,7 @@ export class SeedDataService {
       tax_rate: 0.08,
       category: 'Test',
       description: `Test product: ${name}`,
-      barcode: `TEST${Date.now()}`,
+      // barcode: `TEST${Date.now()}`, // Not part of Product interface
     };
 
     return await productService.addProduct(productData);

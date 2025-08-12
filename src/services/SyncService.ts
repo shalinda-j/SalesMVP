@@ -21,7 +21,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 class SyncService implements ISyncService {
   private static instance: SyncService;
   private isRunning = false;
-  private syncInterval: NodeJS.Timeout | null = null;
+  private syncInterval: ReturnType<typeof setInterval> | null = null;
   private deviceId: string;
   private config: SyncConfig;
   private syncQueue: SyncQueueItem[] = [];

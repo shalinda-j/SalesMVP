@@ -1,5 +1,6 @@
 import { database } from '../stores/DatabaseFactory';
 import { seedDataService } from './SeedDataService';
+import { profileService } from './ProfileService';
 
 export class DatabaseInitService {
   private static instance: DatabaseInitService;
@@ -44,11 +45,20 @@ export class DatabaseInitService {
       if (__DEV__) {
         console.log('2️⃣ Seeding sample data (development mode)...');
         try {
-          await seedDataService.seedProducts();
+          await seedDataService.seedSampleProducts();
           console.log('✅ Sample data seeding completed');
         } catch (seedError) {
           console.warn('⚠️ Sample data seeding failed, but continuing:', seedError);
         }
+      }
+
+      // Step 2.5: Initialize profile and business settings
+      console.log('2️⃣.5️⃣ Initializing profile and business settings...');
+      try {
+        await profileService.initializeDefaultBusinessSettings();
+        console.log('✅ Profile and business settings initialized');
+      } catch (profileError) {
+        console.warn('⚠️ Profile initialization failed, but continuing:', profileError);
       }
 
       // Step 3: Verify initialization

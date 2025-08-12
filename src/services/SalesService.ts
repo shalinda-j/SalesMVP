@@ -58,6 +58,23 @@ export class SalesService {
     }
 
     try {
+      // Ensure database is initialized
+      if (!database) {
+        throw new Error('Database not available');
+      }
+
+      // Check if database is already initialized
+      if (!database.isInitialized()) {
+        console.log('Database not initialized, initializing now...');
+        try {
+          await database.initialize();
+          console.log('Database initialized successfully');
+        } catch (initError) {
+          console.error('Database initialization failed:', initError);
+          throw new Error('Database initialization failed. Please restart the app.');
+        }
+      }
+
       // Calculate totals
       const { subtotal, totalTax, grandTotal } = this.calculateTotals(cart);
 

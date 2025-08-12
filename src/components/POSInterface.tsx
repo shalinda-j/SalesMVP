@@ -6,51 +6,51 @@ import {
   FlatList,
   TouchableOpacity,
   Alert,
-  Modal,
   SafeAreaView,
-  TextInput
+  Modal,
+  TextInput,
+  Dimensions,
+  Platform,
 } from 'react-native';
-import { Product } from '../types';
+import { Ionicons } from '@expo/vector-icons';
+import { Product, CartItem, RetailTransaction } from '../types';
 import { productService } from '../services/ProductService';
-import { salesService, CartItem, Sale } from '../services/SimpleSalesService';
-import { PaymentProcessor } from './PaymentProcessor';
-import { ReceiptGenerator } from './ReceiptGenerator';
-import { EnhancedReceiptGenerator } from './EnhancedReceiptGenerator';
-import { ManualProductEntry } from './ManualProductEntry';
-import { BarcodeScanner } from './BarcodeScanner';
-import { EnhancedProductSearch } from './EnhancedProductSearch';
+import { standardPOSService } from '../services/StandardPOSService';
 import { seedDataService } from '../services/SeedDataService';
-import { SyncStatusIndicator } from './SyncStatusIndicator';
-import { syncService } from '../services/SyncService';
+import { BarcodeScanner } from './BarcodeScanner';
+
+const { width, height } = Dimensions.get('window');
+
+// Responsive utilities
+const isMobile = width < 768;
+const isSmallMobile = width < 480;
+const scaleFont = (size: number) => isSmallMobile ? size * 0.9 : isMobile ? size * 0.95 : size;
+const scaleSpacing = (size: number) => isSmallMobile ? size * 0.8 : isMobile ? size * 0.9 : size;
+const getTouchTargetSize = () => 44; // Minimum touch target size
+const getSafeAreaPadding = () => ({
+  paddingTop: Platform.OS === 'ios' ? (height >= 812 ? 44 : 20) : 0,
+  paddingBottom: Platform.OS === 'ios' ? (height >= 812 ? 34 : 0) : 0,
+});
 
 export const POSInterface: React.FC = () => {
-  // State management
+  // State
   const [products, setProducts] = useState<Product[]>([]);
   const [cart, setCart] = useState<CartItem[]>([]);
-  const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
+  const [showScanner, setShowScanner] = useState(false);
   const [showPayment, setShowPayment] = useState(false);
   const [showReceipt, setShowReceipt] = useState(false);
-  const [showManualEntry, setShowManualEntry] = useState(false);
-  const [showBarcodeScanner, setShowBarcodeScanner] = useState(false);
-  const [showProductSearch, setShowProductSearch] = useState(false);
-  const [currentSale, setCurrentSale] = useState<Sale | null>(null);
-  const [taxRate, setTaxRate] = useState(0.08); // 8% default tax rate
-  const [showEnhancedReceipt, setShowEnhancedReceipt] = useState(false);
+  const [currentTransaction, setCurrentTransaction] = useState<RetailTransaction | null>(null);
+  const [activeView, setActiveView] = useState<'products' | 'cart'>('products');
 
-  // Load products on component mount
+  // Load products
   useEffect(() => {
     loadProducts();
   }, []);
 
   const loadProducts = async () => {
     try {
-      setLoading(true);
-      
-      // Check if we need to seed sample data
       const allProducts = await productService.getAllProducts();
-      
-      // If no products exist, seed sample data
       if (allProducts.length === 0) {
         await seedDataService.seedSampleProducts();
         const seededProducts = await productService.getAllProducts();
@@ -60,165 +60,73 @@ export const POSInterface: React.FC = () => {
       }
     } catch (error) {
       Alert.alert('Error', 'Failed to load products');
-    } finally {
-      setLoading(false);
     }
   };
 
-  // Filter products based on search query
+  // Filter products
   const filteredProducts = products.filter(product =>
     product.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
     product.sku.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
   // Cart calculations
-  const subtotal = cart.reduce((sum, item) => sum + (item.price * item.quantity), 0);
-  const tax = subtotal * taxRate;
-  const total = subtotal + tax;
+  const cartTotals = standardPOSService.calculateCartTotals(cart, 0.08);
 
-  // Add product to cart
-  const addToCart = (product: Product, quantity: number = 1) => {
-    const productIdStr = product.id.toString();
-    const existingItem = cart.find(item => item.id === productIdStr);
-    
-    if (existingItem) {
-      setCart(cart.map(item =>
-        item.id === productIdStr
-          ? { ...item, quantity: item.quantity + quantity }
-          : item
-      ));
+  // Add to cart
+  const addToCart = (product: Product) => {
+    const updatedCart = standardPOSService.addToCart(cart, product, 1);
+    setCart(updatedCart);
+    Alert.alert('Added', `${product.name} added to cart`);
+  };
+
+  // Update quantity
+  const updateQuantity = (itemId: string | number, quantity: number) => {
+    const updatedCart = standardPOSService.updateCartQuantity(cart, itemId, quantity);
+    setCart(updatedCart);
+  };
+
+  // Remove from cart
+  const removeFromCart = (itemId: string | number) => {
+    const updatedCart = standardPOSService.removeFromCart(cart, itemId);
+    setCart(updatedCart);
+  };
+
+  // Handle barcode scan
+  const handleBarcodeScanned = (barcode: string) => {
+    const product = products.find(p => p.sku === barcode);
+    if (product) {
+      addToCart(product);
+      setShowScanner(false);
     } else {
-      const cartItem: CartItem = {
-        id: productIdStr,
-        name: product.name,
-        price: product.price,
-        quantity,
-        sku: product.sku
-      };
-      setCart([...cart, cartItem]);
+      Alert.alert('Not Found', `Product with barcode ${barcode} not found`);
     }
   };
 
-  // Add manual product to cart (temporary, not saved to catalog)
-  const addManualProductToCart = (productData: {
-    name: string;
-    price: number;
-    quantity: number;
-  }) => {
-    const manualItem: CartItem = {
-      id: `manual_${Date.now()}`, // Generate temporary ID
-      name: productData.name,
-      price: productData.price,
-      quantity: productData.quantity,
-      sku: undefined // Manual products don't have SKUs
-    };
-    setCart([...cart, manualItem]);
-  };
-
-  // Update cart item quantity
-  const updateCartQuantity = (itemId: string, newQuantity: number) => {
-    if (newQuantity <= 0) {
-      removeFromCart(itemId);
-    } else {
-      setCart(cart.map(item =>
-        item.id === itemId
-          ? { ...item, quantity: newQuantity }
-          : item
-      ));
-    }
-  };
-
-  // Remove item from cart
-  const removeFromCart = (itemId: string) => {
-    setCart(cart.filter(item => item.id !== itemId));
-  };
-
-  // Clear entire cart
-  const clearCart = () => {
-    Alert.alert(
-      'Clear Cart',
-      'Are you sure you want to clear the entire cart?',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Clear',
-          style: 'destructive',
-          onPress: () => setCart([])
-        }
-      ]
-    );
-  };
-
-  // Process payment and complete sale
-  const handlePaymentComplete = async (paymentMethod: 'cash' | 'card' | 'digital', amountPaid: number) => {
+  // Process payment
+  const handlePayment = async (method: 'cash' | 'card' | 'digital', amount: number) => {
     try {
-      const sale = await salesService.completeSale(
-        cart,
-        paymentMethod,
-        amountPaid,
-        subtotal,
-        tax,
-        0, // discount
-        'System' // cashier
-      );
-
-      setCurrentSale(sale);
+      const transaction = await standardPOSService.processTransaction(cart, method, amount);
+      setCurrentTransaction(transaction);
       setCart([]);
       setShowPayment(false);
       setShowReceipt(true);
-
-      Alert.alert('Sale Complete', `Payment of $${amountPaid.toFixed(2)} processed successfully!`);
+      Alert.alert('Success', 'Transaction completed!');
     } catch (error) {
-      Alert.alert('Error', 'Failed to process sale. Please try again.');
+      Alert.alert('Error', 'Payment failed');
     }
   };
 
-  // Handle receipt actions
-  const handlePrintReceipt = () => {
-    Alert.alert('Print Receipt', 'Print functionality would be implemented here');
-  };
-
-  const handleEmailReceipt = (email: string) => {
-    Alert.alert('Email Receipt', `Receipt would be sent to ${email}`);
-  };
-
-  // Handle barcode scanner
-  const handleBarcodeProductFound = (product: Product) => {
-    addToCart(product);
-    Alert.alert('Product Added', `${product.name} added to cart`);
-  };
-
-  const handleBarcodeScanned = (barcode: string) => {
-    console.log('Barcode scanned:', barcode);
-    // This is handled automatically by the BarcodeScanner component
-  };
-
-  const handleManualSearchFromBarcode = () => {
-    setShowBarcodeScanner(false);
-    setShowProductSearch(true);
-  };
-
-  // Handle enhanced product search
-  const handleProductSelect = (product: Product) => {
-    addToCart(product);
-  };
-
-  // Render product item
+  // Render product
   const renderProduct = ({ item }: { item: Product }) => (
-    <TouchableOpacity
-      style={styles.productItem}
-      onPress={() => addToCart(item)}
-    >
+    <TouchableOpacity style={styles.productCard} onPress={() => addToCart(item)}>
       <View style={styles.productInfo}>
         <Text style={styles.productName}>{item.name}</Text>
         <Text style={styles.productSku}>SKU: {item.sku}</Text>
+        <Text style={styles.productStock}>Stock: {item.stock_qty}</Text>
         <Text style={styles.productPrice}>${item.price.toFixed(2)}</Text>
       </View>
-      <TouchableOpacity
-        style={styles.addButton}
-        onPress={() => addToCart(item)}
-      >
-        <Text style={styles.addButtonText}>+</Text>
+      <TouchableOpacity style={styles.addButton} onPress={() => addToCart(item)}>
+        <Ionicons name="add" size={24} color="white" />
       </TouchableOpacity>
     </TouchableOpacity>
   );
@@ -228,37 +136,27 @@ export const POSInterface: React.FC = () => {
     <View style={styles.cartItem}>
       <View style={styles.cartItemInfo}>
         <Text style={styles.cartItemName}>{item.name}</Text>
-        {item.sku && <Text style={styles.cartItemSku}>SKU: {item.sku}</Text>}
         <Text style={styles.cartItemPrice}>${item.price.toFixed(2)} each</Text>
       </View>
-      
-      <View style={styles.quantityControls}>
-        <TouchableOpacity
+      <View style={styles.cartItemControls}>
+        <TouchableOpacity 
           style={styles.quantityButton}
-          onPress={() => updateCartQuantity(item.id, item.quantity - 1)}
+          onPress={() => updateQuantity(item.id, item.quantity - 1)}
         >
-          <Text style={styles.quantityButtonText}>-</Text>
+          <Ionicons name="remove" size={20} color="#007AFF" />
         </TouchableOpacity>
-        
         <Text style={styles.quantityText}>{item.quantity}</Text>
-        
-        <TouchableOpacity
+        <TouchableOpacity 
           style={styles.quantityButton}
-          onPress={() => updateCartQuantity(item.id, item.quantity + 1)}
+          onPress={() => updateQuantity(item.id, item.quantity + 1)}
         >
-          <Text style={styles.quantityButtonText}>+</Text>
+          <Ionicons name="add" size={20} color="#007AFF" />
         </TouchableOpacity>
-      </View>
-      
-      <View style={styles.cartItemTotal}>
-        <Text style={styles.cartItemTotalText}>
-          ${(item.price * item.quantity).toFixed(2)}
-        </Text>
-        <TouchableOpacity
+        <TouchableOpacity 
           style={styles.removeButton}
           onPress={() => removeFromCart(item.id)}
         >
-          <Text style={styles.removeButtonText}>×</Text>
+          <Ionicons name="trash" size={20} color="#FF3B30" />
         </TouchableOpacity>
       </View>
     </View>
@@ -266,201 +164,178 @@ export const POSInterface: React.FC = () => {
 
   return (
     <SafeAreaView style={styles.container}>
+      {/* Header */}
       <View style={styles.header}>
-        <Text style={styles.title}>Sales MVP - POS</Text>
-        <SyncStatusIndicator style={styles.syncIndicator} />
+        <Text style={styles.title}>Professional POS System</Text>
+        <View style={styles.headerActions}>
+          <TouchableOpacity style={styles.scanButton} onPress={() => setShowScanner(true)}>
+            <Ionicons name="barcode" size={24} color="white" />
+          </TouchableOpacity>
+          <TouchableOpacity 
+            style={styles.cartButton} 
+            onPress={() => setActiveView(activeView === 'products' ? 'cart' : 'products')}
+          >
+            <Ionicons name="basket" size={24} color="white" />
+            {cart.length > 0 && (
+              <View style={styles.cartBadge}>
+                <Text style={styles.cartBadgeText}>{cart.length}</Text>
+              </View>
+            )}
+          </TouchableOpacity>
+        </View>
       </View>
 
-      <View style={styles.content}>
-        {/* Left Panel - Products */}
-        <View style={styles.leftPanel}>
-          <View style={styles.searchContainer}>
-            <TextInput
-              style={styles.searchInput}
-              placeholder="Search products..."
-              value={searchQuery}
-              onChangeText={setSearchQuery}
-            />
-          </View>
+      {/* Search */}
+      <View style={styles.searchContainer}>
+        <TextInput
+          style={styles.searchInput}
+          placeholder="Search products or scan barcode..."
+          value={searchQuery}
+          onChangeText={setSearchQuery}
+        />
+      </View>
 
-          {/* Enhanced Search and Barcode Scanner Buttons */}
-          <View style={styles.actionButtonsContainer}>
-            <TouchableOpacity
-              style={styles.scanButton}
-              onPress={() => setShowBarcodeScanner(true)}
-            >
-              <Text style={styles.scanButtonText}>📷 Scan Barcode</Text>
-            </TouchableOpacity>
-            
-            <TouchableOpacity
-              style={styles.searchButton}
-              onPress={() => setShowProductSearch(true)}
-            >
-              <Text style={styles.searchButtonText}>🔍 Search Products</Text>
-            </TouchableOpacity>
-          </View>
-
+      {/* Mobile Navigation Tabs */}
+      {isMobile && (
+        <View style={styles.mobileTabs}>
           <TouchableOpacity
-            style={styles.manualEntryButton}
-            onPress={() => setShowManualEntry(true)}
+            style={[styles.tabButton, activeView === 'products' && styles.tabButtonActive]}
+            onPress={() => setActiveView('products')}
           >
-            <Text style={styles.manualEntryButtonText}>➕ Add Manual Product</Text>
+            <Ionicons 
+              name="grid-outline" 
+              size={20} 
+              color={activeView === 'products' ? '#007AFF' : '#8E8E93'} 
+            />
+            <Text style={[styles.tabText, activeView === 'products' && styles.tabTextActive]}>
+              Products
+            </Text>
           </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.tabButton, activeView === 'cart' && styles.tabButtonActive]}
+            onPress={() => setActiveView('cart')}
+          >
+            <Ionicons 
+              name="cart-outline" 
+              size={20} 
+              color={activeView === 'cart' ? '#007AFF' : '#8E8E93'} 
+            />
+            <Text style={[styles.tabText, activeView === 'cart' && styles.tabTextActive]}>
+              Cart ({cart.length})
+            </Text>
+          </TouchableOpacity>
+        </View>
+      )}
 
+      {/* Main Content */}
+      <View style={styles.content}>
+        {activeView === 'products' ? (
           <FlatList
             data={filteredProducts}
             renderItem={renderProduct}
             keyExtractor={(item) => item.id.toString()}
-            style={styles.productList}
+            numColumns={isMobile ? 1 : 2}
+            contentContainerStyle={styles.productsList}
             showsVerticalScrollIndicator={false}
           />
-        </View>
-
-        {/* Right Panel - Cart */}
-        <View style={styles.rightPanel}>
-          <View style={styles.cartHeader}>
-            <Text style={styles.cartTitle}>Cart ({cart.length} items)</Text>
-            {cart.length > 0 && (
-              <TouchableOpacity onPress={clearCart}>
-                <Text style={styles.clearCartText}>Clear</Text>
-              </TouchableOpacity>
+        ) : (
+          <View style={styles.cartContainer}>
+            {cart.length === 0 ? (
+              <View style={styles.emptyCart}>
+                <Ionicons name="basket-outline" size={64} color="#8E8E93" />
+                <Text style={styles.emptyCartText}>Cart is empty</Text>
+              </View>
+            ) : (
+              <>
+                <FlatList
+                  data={cart}
+                  renderItem={renderCartItem}
+                  keyExtractor={(item) => item.id.toString()}
+                  style={styles.cartList}
+                  showsVerticalScrollIndicator={false}
+                />
+                <View style={styles.cartSummary}>
+                  <View style={styles.summaryRow}>
+                    <Text style={styles.summaryLabel}>Subtotal:</Text>
+                    <Text style={styles.summaryValue}>${cartTotals.subtotal.toFixed(2)}</Text>
+                  </View>
+                  <View style={styles.summaryRow}>
+                    <Text style={styles.summaryLabel}>Tax:</Text>
+                    <Text style={styles.summaryValue}>${cartTotals.tax.toFixed(2)}</Text>
+                  </View>
+                  <View style={styles.totalRow}>
+                    <Text style={styles.totalLabel}>Total:</Text>
+                    <Text style={styles.totalValue}>${cartTotals.total.toFixed(2)}</Text>
+                  </View>
+                  <TouchableOpacity 
+                    style={styles.checkoutButton}
+                    onPress={() => setShowPayment(true)}
+                  >
+                    <Text style={styles.checkoutButtonText}>Checkout</Text>
+                  </TouchableOpacity>
+                </View>
+              </>
             )}
           </View>
-
-          {cart.length === 0 ? (
-            <View style={styles.emptyCart}>
-              <Text style={styles.emptyCartText}>Cart is empty</Text>
-              <Text style={styles.emptyCartSubtext}>Add products to get started</Text>
-            </View>
-          ) : (
-            <>
-              <FlatList
-                data={cart}
-                renderItem={renderCartItem}
-                keyExtractor={(item) => item.id}
-                style={styles.cartList}
-                showsVerticalScrollIndicator={false}
-              />
-
-              {/* Cart Summary */}
-              <View style={styles.cartSummary}>
-                <View style={styles.summaryRow}>
-                  <Text style={styles.summaryLabel}>Subtotal:</Text>
-                  <Text style={styles.summaryValue}>${subtotal.toFixed(2)}</Text>
-                </View>
-                <View style={styles.summaryRow}>
-                  <Text style={styles.summaryLabel}>Tax ({(taxRate * 100).toFixed(1)}%):</Text>
-                  <Text style={styles.summaryValue}>${tax.toFixed(2)}</Text>
-                </View>
-                <View style={[styles.summaryRow, styles.totalRow]}>
-                  <Text style={styles.totalLabel}>Total:</Text>
-                  <Text style={styles.totalValue}>${total.toFixed(2)}</Text>
-                </View>
-
-                <TouchableOpacity
-                  style={styles.checkoutButton}
-                  onPress={() => setShowPayment(true)}
-                >
-                  <Text style={styles.checkoutButtonText}>
-                    Checkout - ${total.toFixed(2)}
-                  </Text>
-                </TouchableOpacity>
-              </View>
-            </>
-          )}
-        </View>
+        )}
       </View>
 
-      {/* Payment Modal */}
-      <PaymentProcessor
-        visible={showPayment}
-        cart={cart}
-        total={total}
-        tax={tax}
-        onClose={() => setShowPayment(false)}
-        onPaymentComplete={handlePaymentComplete}
-      />
-
-      {/* Standard Receipt Modal */}
-      {currentSale && (
-        <Modal
-          visible={showReceipt}
-          animationType="slide"
-          presentationStyle="pageSheet"
-          onRequestClose={() => setShowReceipt(false)}
-        >
-          <View style={{ flex: 1 }}>
-            {/* Receipt Type Selector */}
-            <View style={{ flexDirection: 'row', padding: 10, borderBottomWidth: 1, borderBottomColor: '#e9ecef' }}>
-              <TouchableOpacity
-                style={[styles.receiptTypeButton, !showEnhancedReceipt && styles.receiptTypeButtonActive]}
-                onPress={() => setShowEnhancedReceipt(false)}
-              >
-                <Text style={[styles.receiptTypeText, !showEnhancedReceipt && styles.receiptTypeTextActive]}>Standard</Text>
-              </TouchableOpacity>
-              
-              <TouchableOpacity
-                style={[styles.receiptTypeButton, showEnhancedReceipt && styles.receiptTypeButtonActive]}
-                onPress={() => setShowEnhancedReceipt(true)}
-              >
-                <Text style={[styles.receiptTypeText, showEnhancedReceipt && styles.receiptTypeTextActive]}>Enhanced</Text>
-              </TouchableOpacity>
-            </View>
-
-            {/* Receipt Content */}
-            {showEnhancedReceipt ? (
-              <EnhancedReceiptGenerator
-                sale={currentSale}
-                onClose={() => setShowReceipt(false)}
-                onPrint={handlePrintReceipt}
-                onEmail={handleEmailReceipt}
-              />
-            ) : (
-              <ReceiptGenerator
-                sale={currentSale}
-                onClose={() => setShowReceipt(false)}
-                onPrint={handlePrintReceipt}
-                onEmail={handleEmailReceipt}
-              />
-            )}
-          </View>
-        </Modal>
-      )}
-
-      {/* Manual Product Entry Modal */}
-        <ManualProductEntry
-        visible={showManualEntry}
-        onClose={() => setShowManualEntry(false)}
-        onAddProduct={(product: Product) => {
-          addManualProductToCart({
-            name: product.name,
-            price: product.price,
-            quantity: product.stock_qty
-          });
-        }}
-      />
-
-      {/* Barcode Scanner Modal */}
+      {/* Barcode Scanner */}
       <BarcodeScanner
-        visible={showBarcodeScanner}
-        onClose={() => setShowBarcodeScanner(false)}
-        onProductFound={handleBarcodeProductFound}
-        onBarcodeScanned={handleBarcodeScanned}
-        onManualSearch={handleManualSearchFromBarcode}
+        visible={showScanner}
+        onClose={() => setShowScanner(false)}
+        onScan={handleBarcodeScanned}
       />
 
-      {/* Enhanced Product Search Modal */}
-      <EnhancedProductSearch
-        visible={showProductSearch}
-        onClose={() => setShowProductSearch(false)}
-        onProductSelect={handleProductSelect}
-        onAddManualProduct={() => {
-          setShowProductSearch(false);
-          setShowManualEntry(true);
-        }}
-        title="Add Product to Cart"
-        placeholder="Search by name, SKU, or scan barcode..."
-      />
+      {/* Payment Modal */}
+      <Modal visible={showPayment} animationType="slide">
+        <SafeAreaView style={styles.modalContainer}>
+          <View style={styles.modalHeader}>
+            <Text style={styles.modalTitle}>Payment</Text>
+            <TouchableOpacity onPress={() => setShowPayment(false)}>
+              <Text style={styles.closeButton}>Close</Text>
+            </TouchableOpacity>
+          </View>
+          <View style={styles.paymentContent}>
+            <Text style={styles.paymentAmount}>Total: ${cartTotals.total.toFixed(2)}</Text>
+            <TouchableOpacity 
+              style={styles.paymentMethod}
+              onPress={() => handlePayment('cash', cartTotals.total)}
+            >
+              <Text style={styles.paymentMethodText}>Cash Payment</Text>
+            </TouchableOpacity>
+            <TouchableOpacity 
+              style={styles.paymentMethod}
+              onPress={() => handlePayment('card', cartTotals.total)}
+            >
+              <Text style={styles.paymentMethodText}>Card Payment</Text>
+            </TouchableOpacity>
+            <TouchableOpacity 
+              style={styles.paymentMethod}
+              onPress={() => handlePayment('digital', cartTotals.total)}
+            >
+              <Text style={styles.paymentMethodText}>Digital Payment</Text>
+            </TouchableOpacity>
+          </View>
+        </SafeAreaView>
+      </Modal>
+
+      {/* Receipt Modal */}
+      <Modal visible={showReceipt} animationType="slide">
+        <SafeAreaView style={styles.modalContainer}>
+          <View style={styles.modalHeader}>
+            <Text style={styles.modalTitle}>Receipt</Text>
+            <TouchableOpacity onPress={() => setShowReceipt(false)}>
+              <Text style={styles.closeButton}>Close</Text>
+            </TouchableOpacity>
+          </View>
+          <View style={styles.receiptContent}>
+            <Text style={styles.receiptTitle}>Transaction Complete!</Text>
+            <Text style={styles.receiptAmount}>${currentTransaction?.totals.grandTotal.toFixed(2)}</Text>
+            <Text style={styles.receiptId}>ID: {currentTransaction?.id}</Text>
+          </View>
+        </SafeAreaView>
+      </Modal>
     </SafeAreaView>
   );
 };
@@ -468,154 +343,152 @@ export const POSInterface: React.FC = () => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#f8f9fa',
+    backgroundColor: '#F2F2F7',
   },
   header: {
-    backgroundColor: '#2c3e50',
-    padding: 20,
+    backgroundColor: '#007AFF',
+    paddingHorizontal: scaleSpacing(20),
+    paddingVertical: scaleSpacing(16),
+    paddingTop: getSafeAreaPadding().paddingTop + scaleSpacing(16),
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
   },
   title: {
-    fontSize: 24,
+    fontSize: scaleFont(24),
     fontWeight: 'bold',
-    color: '#fff',
+    color: 'white',
   },
-  syncIndicator: {
-    // Sync indicator will use its own styling
+  headerActions: {
+    flexDirection: 'row',
+    gap: scaleSpacing(12),
+  },
+  scanButton: {
+    backgroundColor: 'rgba(255,255,255,0.2)',
+    padding: scaleSpacing(8),
+    borderRadius: scaleSpacing(8),
+    minWidth: getTouchTargetSize(),
+    minHeight: getTouchTargetSize(),
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  cartButton: {
+    backgroundColor: 'rgba(255,255,255,0.2)',
+    padding: scaleSpacing(8),
+    borderRadius: scaleSpacing(8),
+    position: 'relative',
+    minWidth: getTouchTargetSize(),
+    minHeight: getTouchTargetSize(),
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  cartBadge: {
+    position: 'absolute',
+    top: -4,
+    right: -4,
+    backgroundColor: '#FF3B30',
+    borderRadius: 10,
+    minWidth: 20,
+    height: 20,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  cartBadgeText: {
+    color: 'white',
+    fontSize: scaleFont(12),
+    fontWeight: 'bold',
+  },
+  searchContainer: {
+    padding: scaleSpacing(16),
+    backgroundColor: 'white',
+  },
+  searchInput: {
+    backgroundColor: '#F2F2F7',
+    padding: scaleSpacing(12),
+    borderRadius: scaleSpacing(8),
+    fontSize: scaleFont(16),
+    minHeight: getTouchTargetSize(),
+  },
+  mobileTabs: {
+    flexDirection: 'row',
+    backgroundColor: 'white',
+    borderBottomWidth: 1,
+    borderBottomColor: '#E5E5EA',
+  },
+  tabButton: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: scaleSpacing(12),
+    gap: scaleSpacing(8),
+  },
+  tabButtonActive: {
+    backgroundColor: 'rgba(0, 122, 255, 0.1)',
+  },
+  tabText: {
+    fontSize: scaleFont(14),
+    color: '#8E8E93',
+    fontWeight: '500',
+  },
+  tabTextActive: {
+    color: '#007AFF',
+    fontWeight: '600',
   },
   content: {
     flex: 1,
-    flexDirection: 'row',
   },
-  leftPanel: {
-    flex: 2,
-    backgroundColor: '#fff',
-    borderRightWidth: 1,
-    borderRightColor: '#e9ecef',
+  productsList: {
+    padding: scaleSpacing(8),
   },
-  searchContainer: {
-    padding: 15,
-    borderBottomWidth: 1,
-    borderBottomColor: '#e9ecef',
-  },
-  searchInput: {
-    backgroundColor: '#f8f9fa',
-    padding: 12,
-    borderRadius: 8,
-    fontSize: 16,
-  },
-  manualEntryButton: {
-    backgroundColor: '#17a2b8',
-    margin: 15,
-    padding: 12,
-    borderRadius: 8,
-    alignItems: 'center',
-  },
-  manualEntryButtonText: {
-    color: '#fff',
-    fontWeight: 'bold',
-    fontSize: 16,
-  },
-  actionButtonsContainer: {
-    flexDirection: 'row',
-    paddingHorizontal: 15,
-    paddingBottom: 10,
-    gap: 10,
-  },
-  scanButton: {
-    flex: 1,
-    backgroundColor: '#3498db',
-    padding: 12,
-    borderRadius: 8,
-    alignItems: 'center',
-  },
-  scanButtonText: {
-    color: '#fff',
-    fontWeight: 'bold',
-    fontSize: 14,
-  },
-  searchButton: {
-    flex: 1,
-    backgroundColor: '#9b59b6',
-    padding: 12,
-    borderRadius: 8,
-    alignItems: 'center',
-  },
-  searchButtonText: {
-    color: '#fff',
-    fontWeight: 'bold',
-    fontSize: 14,
-  },
-  productList: {
-    flex: 1,
-    paddingHorizontal: 15,
-  },
-  productItem: {
+  productCard: {
+    backgroundColor: 'white',
+    margin: scaleSpacing(8),
+    padding: scaleSpacing(16),
+    borderRadius: scaleSpacing(12),
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    backgroundColor: '#f8f9fa',
-    padding: 15,
-    marginBottom: 10,
-    borderRadius: 8,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+    minHeight: getTouchTargetSize() * 1.5,
   },
   productInfo: {
     flex: 1,
   },
   productName: {
-    fontSize: 16,
-    fontWeight: 'bold',
-    color: '#333',
+    fontSize: scaleFont(16),
+    fontWeight: '600',
+    marginBottom: scaleSpacing(4),
   },
   productSku: {
-    fontSize: 12,
-    color: '#666',
-    marginTop: 2,
+    fontSize: scaleFont(12),
+    color: '#8E8E93',
+    marginBottom: scaleSpacing(2),
+  },
+  productStock: {
+    fontSize: scaleFont(12),
+    color: '#8E8E93',
+    marginBottom: scaleSpacing(4),
   },
   productPrice: {
-    fontSize: 16,
+    fontSize: scaleFont(18),
     fontWeight: 'bold',
-    color: '#27ae60',
-    marginTop: 4,
+    color: '#007AFF',
   },
   addButton: {
-    backgroundColor: '#27ae60',
-    width: 36,
-    height: 36,
-    borderRadius: 18,
+    backgroundColor: '#007AFF',
+    width: getTouchTargetSize(),
+    height: getTouchTargetSize(),
+    borderRadius: getTouchTargetSize() / 2,
     justifyContent: 'center',
     alignItems: 'center',
-    marginLeft: 15,
   },
-  addButtonText: {
-    color: '#fff',
-    fontSize: 20,
-    fontWeight: 'bold',
-  },
-  rightPanel: {
+  cartContainer: {
     flex: 1,
-    backgroundColor: '#fff',
-    flexDirection: 'column',
-  },
-  cartHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    padding: 20,
-    borderBottomWidth: 1,
-    borderBottomColor: '#e9ecef',
-  },
-  cartTitle: {
-    fontSize: 20,
-    fontWeight: 'bold',
-    color: '#333',
-  },
-  clearCartText: {
-    color: '#e74c3c',
-    fontSize: 16,
-    fontWeight: '600',
   },
   emptyCart: {
     flex: 1,
@@ -623,155 +496,193 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   emptyCartText: {
-    fontSize: 18,
-    color: '#666',
-    marginBottom: 8,
-  },
-  emptyCartSubtext: {
-    fontSize: 14,
-    color: '#999',
+    fontSize: scaleFont(18),
+    color: '#8E8E93',
+    marginTop: scaleSpacing(16),
   },
   cartList: {
     flex: 1,
-    paddingHorizontal: 15,
+    padding: scaleSpacing(16),
   },
   cartItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#f8f9fa',
-    padding: 12,
-    marginBottom: 8,
-    borderRadius: 8,
+    backgroundColor: 'white',
+    padding: scaleSpacing(16),
+    borderRadius: scaleSpacing(12),
+    marginBottom: scaleSpacing(12),
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
   },
   cartItemInfo: {
-    flex: 1,
+    marginBottom: scaleSpacing(12),
   },
   cartItemName: {
-    fontSize: 14,
-    fontWeight: 'bold',
-    color: '#333',
-  },
-  cartItemSku: {
-    fontSize: 10,
-    color: '#666',
-    marginTop: 2,
+    fontSize: scaleFont(16),
+    fontWeight: '600',
+    marginBottom: scaleSpacing(4),
   },
   cartItemPrice: {
-    fontSize: 12,
-    color: '#666',
-    marginTop: 2,
+    fontSize: scaleFont(14),
+    color: '#8E8E93',
   },
-  quantityControls: {
+  cartItemControls: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginHorizontal: 10,
+    justifyContent: 'space-between',
   },
   quantityButton: {
-    backgroundColor: '#dee2e6',
-    width: 28,
-    height: 28,
-    borderRadius: 14,
+    minWidth: getTouchTargetSize(),
+    minHeight: getTouchTargetSize(),
     justifyContent: 'center',
     alignItems: 'center',
+    backgroundColor: '#F2F2F7',
+    borderRadius: scaleSpacing(8),
   },
-  quantityButtonText: {
-    fontSize: 16,
-    fontWeight: 'bold',
-    color: '#495057',
+  removeButton: {
+    minWidth: getTouchTargetSize(),
+    minHeight: getTouchTargetSize(),
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: '#FFE5E5',
+    borderRadius: scaleSpacing(8),
   },
   quantityText: {
-    marginHorizontal: 12,
-    fontSize: 16,
-    fontWeight: 'bold',
+    fontSize: scaleFont(16),
+    fontWeight: '600',
+    marginHorizontal: scaleSpacing(16),
     minWidth: 30,
     textAlign: 'center',
   },
-  cartItemTotal: {
-    alignItems: 'flex-end',
-  },
-  cartItemTotalText: {
-    fontSize: 14,
-    fontWeight: 'bold',
-    color: '#333',
-  },
-  removeButton: {
-    marginTop: 4,
-    padding: 4,
-  },
-  removeButtonText: {
-    fontSize: 16,
-    color: '#e74c3c',
-    fontWeight: 'bold',
-  },
   cartSummary: {
-    backgroundColor: '#f8f9fa',
-    padding: 20,
-    borderTopWidth: 1,
-    borderTopColor: '#e9ecef',
+    backgroundColor: 'white',
+    padding: scaleSpacing(20),
+    borderTopLeftRadius: scaleSpacing(20),
+    borderTopRightRadius: scaleSpacing(20),
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: -2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 5,
   },
   summaryRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    marginBottom: 8,
+    marginBottom: scaleSpacing(8),
   },
   summaryLabel: {
-    fontSize: 16,
-    color: '#666',
+    fontSize: scaleFont(16),
+    color: '#8E8E93',
   },
   summaryValue: {
-    fontSize: 16,
-    color: '#333',
+    fontSize: scaleFont(16),
     fontWeight: '600',
   },
   totalRow: {
-    marginTop: 8,
-    paddingTop: 12,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    paddingTop: scaleSpacing(12),
     borderTopWidth: 1,
-    borderTopColor: '#dee2e6',
+    borderTopColor: '#E5E5EA',
+    marginTop: scaleSpacing(8),
   },
   totalLabel: {
-    fontSize: 20,
+    fontSize: scaleFont(18),
     fontWeight: 'bold',
-    color: '#333',
   },
   totalValue: {
-    fontSize: 22,
+    fontSize: scaleFont(20),
     fontWeight: 'bold',
-    color: '#27ae60',
+    color: '#007AFF',
   },
   checkoutButton: {
-    backgroundColor: '#27ae60',
-    padding: 16,
-    borderRadius: 8,
+    backgroundColor: '#007AFF',
+    padding: scaleSpacing(16),
+    borderRadius: scaleSpacing(12),
     alignItems: 'center',
-    marginTop: 15,
+    marginTop: scaleSpacing(16),
+    minHeight: getTouchTargetSize(),
   },
   checkoutButtonText: {
-    color: '#fff',
-    fontSize: 18,
+    color: 'white',
+    fontSize: scaleFont(18),
     fontWeight: 'bold',
   },
-  receiptTypeButton: {
+  modalContainer: {
     flex: 1,
-    paddingVertical: 10,
-    paddingHorizontal: 20,
+    backgroundColor: '#F2F2F7',
+  },
+  modalHeader: {
+    backgroundColor: 'white',
+    paddingHorizontal: scaleSpacing(20),
+    paddingVertical: scaleSpacing(16),
+    paddingTop: getSafeAreaPadding().paddingTop + scaleSpacing(16),
+    flexDirection: 'row',
+    justifyContent: 'space-between',
     alignItems: 'center',
-    backgroundColor: '#f8f9fa',
-    borderWidth: 1,
-    borderColor: '#dee2e6',
-    marginHorizontal: 5,
-    borderRadius: 5,
+    borderBottomWidth: 1,
+    borderBottomColor: '#E5E5EA',
   },
-  receiptTypeButtonActive: {
-    backgroundColor: '#2c3e50',
-    borderColor: '#2c3e50',
+  modalTitle: {
+    fontSize: scaleFont(18),
+    fontWeight: 'bold',
   },
-  receiptTypeText: {
-    fontSize: 14,
-    color: '#666',
+  closeButton: {
+    color: '#007AFF',
+    fontSize: scaleFont(16),
+    minWidth: getTouchTargetSize(),
+    minHeight: getTouchTargetSize(),
+    textAlign: 'center',
+    textAlignVertical: 'center',
+  },
+  paymentContent: {
+    flex: 1,
+    padding: scaleSpacing(20),
+    justifyContent: 'center',
+  },
+  paymentAmount: {
+    fontSize: scaleFont(32),
+    fontWeight: 'bold',
+    textAlign: 'center',
+    marginBottom: scaleSpacing(32),
+  },
+  paymentMethod: {
+    backgroundColor: 'white',
+    padding: scaleSpacing(20),
+    borderRadius: scaleSpacing(12),
+    marginBottom: scaleSpacing(16),
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+    minHeight: getTouchTargetSize() * 2,
+  },
+  paymentMethodText: {
+    fontSize: scaleFont(18),
     fontWeight: '600',
   },
-  receiptTypeTextActive: {
-    color: '#fff',
+  receiptContent: {
+    flex: 1,
+    padding: scaleSpacing(20),
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  receiptTitle: {
+    fontSize: scaleFont(24),
+    fontWeight: 'bold',
+    marginBottom: scaleSpacing(16),
+  },
+  receiptAmount: {
+    fontSize: scaleFont(48),
+    fontWeight: 'bold',
+    color: '#007AFF',
+    marginBottom: scaleSpacing(16),
+  },
+  receiptId: {
+    fontSize: scaleFont(16),
+    color: '#8E8E93',
   },
 });

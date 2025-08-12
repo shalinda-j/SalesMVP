@@ -9,7 +9,7 @@ class CloudNetworkService {
     connectionType: 'unknown',
     isInternetReachable: null
   };
-  private checkInterval?: NodeJS.Timeout;
+  private checkInterval?: ReturnType<typeof setInterval>;
   private readonly CONNECTIVITY_CHECK_URL = 'https://www.google.com/favicon.ico';
   private readonly CHECK_INTERVAL = 30000; // 30 seconds
 
@@ -119,7 +119,7 @@ class CloudNetworkService {
 
       const newStatus: NetworkStatus = {
         isOnline: true,
-        connectionType: this.getConnectionType(),
+        connectionType: this.getMappedConnectionType(),
         isInternetReachable: true,
         details: {
           strength,
@@ -142,7 +142,7 @@ class CloudNetworkService {
     }
   }
 
-  private getConnectionType(): 'none' | 'wifi' | 'cellular' | 'ethernet' | 'unknown' {
+  private getMappedConnectionType(): 'none' | 'wifi' | 'cellular' | 'ethernet' | 'unknown' {
     // Use the existing network service if available
     const existingType = networkService.getConnectionType();
     return this.mapConnectionType(existingType);
@@ -151,22 +151,22 @@ class CloudNetworkService {
   private calculateSignalStrength(latency: number): number {
     // Calculate signal strength based on latency
     // Lower latency = higher strength
-    if (latency < 50) return 100;
-    if (latency < 100) return 90;
-    if (latency < 200) return 80;
-    if (latency < 500) return 60;
-    if (latency < 1000) return 40;
-    if (latency < 2000) return 20;
+    if (latency < 50) {return 100;}
+    if (latency < 100) {return 90;}
+    if (latency < 200) {return 80;}
+    if (latency < 500) {return 60;}
+    if (latency < 1000) {return 40;}
+    if (latency < 2000) {return 20;}
     return 10;
   }
 
   private estimateBandwidth(latency: number): number {
     // Rough bandwidth estimation based on latency
     // This is a very simplified estimation
-    if (latency < 50) return 100; // High speed
-    if (latency < 100) return 50; // Good speed
-    if (latency < 200) return 25; // Medium speed
-    if (latency < 500) return 10; // Low speed
+    if (latency < 50) {return 100;} // High speed
+    if (latency < 100) {return 50;} // Good speed
+    if (latency < 200) {return 25;} // Medium speed
+    if (latency < 500) {return 10;} // Low speed
     return 5; // Very low speed
   }
 
@@ -326,14 +326,14 @@ class CloudNetworkService {
   }
 
   public getConnectionQuality(): 'excellent' | 'good' | 'fair' | 'poor' | 'offline' {
-    if (!this.isOnline()) return 'offline';
+    if (!this.isOnline()) {return 'offline';}
     
     const latency = this.getLatency();
-    if (!latency) return 'good'; // Default if we don't have latency data
+    if (!latency) {return 'good';} // Default if we don't have latency data
     
-    if (latency < 100) return 'excellent';
-    if (latency < 300) return 'good';
-    if (latency < 1000) return 'fair';
+    if (latency < 100) {return 'excellent';}
+    if (latency < 300) {return 'good';}
+    if (latency < 1000) {return 'fair';}
     return 'poor';
   }
 

@@ -106,7 +106,7 @@ class InventoryService {
   async getAllSuppliers(): Promise<Supplier[]> {
     try {
       const suppliersData = await storageService.getItem(this.SUPPLIERS_KEY);
-      if (!suppliersData) return [];
+      if (!suppliersData) {return [];}
 
       const suppliers = JSON.parse(suppliersData);
       return suppliers.map((supplier: any) => ({
@@ -225,7 +225,7 @@ class InventoryService {
   async getAllStockAdjustments(): Promise<StockAdjustment[]> {
     try {
       const data = await storageService.getItem(this.STOCK_ADJUSTMENTS_KEY);
-      if (!data) return [];
+      if (!data) {return [];}
 
       const adjustments = JSON.parse(data);
       return adjustments.map((adj: any) => ({
@@ -291,7 +291,7 @@ class InventoryService {
   async getAllStockAlerts(): Promise<StockAlert[]> {
     try {
       const data = await storageService.getItem(this.STOCK_ALERTS_KEY);
-      if (!data) return [];
+      if (!data) {return [];}
 
       const alerts = JSON.parse(data);
       return alerts.map((alert: any) => ({
@@ -391,7 +391,7 @@ class InventoryService {
   async getAllPurchaseOrders(): Promise<PurchaseOrder[]> {
     try {
       const data = await storageService.getItem(this.PURCHASE_ORDERS_KEY);
-      if (!data) return [];
+      if (!data) {return [];}
 
       const orders = JSON.parse(data);
       return orders.map((order: any) => ({
@@ -472,7 +472,7 @@ class InventoryService {
   async getAllStockMovements(): Promise<StockMovement[]> {
     try {
       const data = await storageService.getItem(this.STOCK_MOVEMENTS_KEY);
-      if (!data) return [];
+      if (!data) {return [];}
 
       const movements = JSON.parse(data);
       return movements.map((movement: any) => ({

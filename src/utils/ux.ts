@@ -188,9 +188,9 @@ export const AnimationHelpers = {
 export const GestureHelpers = {
   // Debounce function for preventing rapid taps
   debounce: <T extends (...args: any[]) => void>(func: T, delay: number = 300): T => {
-    let timeoutId: NodeJS.Timeout;
+    let timeoutId: ReturnType<typeof setTimeout> | undefined;
     return ((...args: any[]) => {
-      clearTimeout(timeoutId);
+      if (timeoutId) {clearTimeout(timeoutId);}
       timeoutId = setTimeout(() => func.apply(null, args), delay);
     }) as T;
   },
@@ -210,7 +210,7 @@ export const GestureHelpers = {
   // Double tap handler
   createDoubleTapHandler: (onSingleTap?: () => void, onDoubleTap?: () => void, delay: number = 300) => {
     let lastTap = 0;
-    let singleTapTimeout: NodeJS.Timeout;
+    let singleTapTimeout: ReturnType<typeof setTimeout> | undefined;
 
     return () => {
       const now = Date.now();
@@ -218,7 +218,7 @@ export const GestureHelpers = {
 
       if (timeSinceLast < delay && timeSinceLast > 0) {
         // Double tap detected
-        clearTimeout(singleTapTimeout);
+        if (singleTapTimeout) {clearTimeout(singleTapTimeout);}
         onDoubleTap?.();
         HapticFeedback.light();
       } else {
@@ -413,12 +413,21 @@ export const DateTimeHelpers = {
     const diffHours = Math.floor(diffMinutes / 60);
     const diffDays = Math.floor(diffHours / 24);
 
-    if (diffMinutes < 1) return 'Just now';
-    if (diffMinutes < 60) return `${diffMinutes} minute${diffMinutes > 1 ? 's' : ''} ago`;
-    if (diffHours < 24) return `${diffHours} hour${diffHours > 1 ? 's' : ''} ago`;
-    if (diffDays < 7) return `${diffDays} day${diffDays > 1 ? 's' : ''} ago`;
+    if (diffMinutes < 1) {return 'Just now';}
+    if (diffMinutes < 60) {return `${diffMinutes} minute${diffMinutes > 1 ? 's' : ''} ago`;}
+    if (diffHours < 24) {return `${diffHours} hour${diffHours > 1 ? 's' : ''} ago`;}
+    if (diffDays < 7) {return `${diffDays} day${diffDays > 1 ? 's' : ''} ago`;}
     
     return date.toLocaleDateString();
+  },
+
+  // Format date in a readable format
+  formatDate: (date: Date): string => {
+    return date.toLocaleDateString('en-US', {
+      year: 'numeric',
+      month: 'short',
+      day: 'numeric',
+    });
   },
 
   // Format currency with locale support

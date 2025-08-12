@@ -38,22 +38,13 @@ export interface TimeRangeAnalytics {
   totalTax: number;
   totalDiscount: number;
   averageTransaction: number;
-  topProducts: LegacyProductAnalytics[];
+  topProducts: ProductAnalytics[];
   dailyBreakdown: DailySummary[];
   paymentMethodBreakdown: {
     cash: { count: number; amount: number; percentage: number };
     card: { count: number; amount: number; percentage: number };
     digital: { count: number; amount: number; percentage: number };
   };
-}
-
-export interface LegacyProductAnalytics {
-  productId: string;
-  productName: string;
-  totalQuantitySold: number;
-  totalRevenue: number;
-  averagePrice: number;
-  salesCount: number;
 }
 
 export interface HourlyAnalytics {
@@ -87,8 +78,8 @@ class AnalyticsService implements IAnalyticsService {
     const sales = await salesService.getSalesByDateRange(startDate, endDate);
 
     const totalSales = sales.length;
-    const totalRevenue = sales.reduce((sum, sale) => sum + sale.total, 0);
-    const totalTax = sales.reduce((sum, sale) => sum + sale.tax, 0);
+    const totalRevenue = sales.reduce((sum, sale) => sum + sale.totals.grandTotal, 0);
+    const totalTax = sales.reduce((sum, sale) => sum + sale.totals.taxTotal, 0);
     const averageTransaction = totalSales > 0 ? totalRevenue / totalSales : 0;
 
     // Payment method breakdown
@@ -99,8 +90,11 @@ class AnalyticsService implements IAnalyticsService {
     };
 
     sales.forEach(sale => {
-      paymentMethods[sale.paymentMethod].count++;
-      paymentMethods[sale.paymentMethod].amount += sale.total;
+      const paymentType = sale.tenders[0]?.type || 'other';
+      if (paymentType === 'cash' || paymentType === 'card' || paymentType === 'digital') {
+        paymentMethods[paymentType].count++;
+        paymentMethods[paymentType].amount += sale.totals.grandTotal;
+      }
     });
 
     return {
@@ -118,9 +112,9 @@ class AnalyticsService implements IAnalyticsService {
     const sales = await salesService.getSalesByDateRange(startDate, endDate);
 
     const totalSales = sales.length;
-    const totalRevenue = sales.reduce((sum, sale) => sum + sale.total, 0);
-    const totalTax = sales.reduce((sum, sale) => sum + sale.tax, 0);
-    const totalDiscount = sales.reduce((sum, sale) => sum + sale.discount, 0);
+    const totalRevenue = sales.reduce((sum, sale) => sum + sale.totals.grandTotal, 0);
+    const totalTax = sales.reduce((sum, sale) => sum + sale.totals.taxTotal, 0);
+    const totalDiscount = sales.reduce((sum, sale) => sum + sale.totals.discountTotal, 0);
     const averageTransaction = totalSales > 0 ? totalRevenue / totalSales : 0;
 
     // Payment method breakdown
@@ -131,8 +125,11 @@ class AnalyticsService implements IAnalyticsService {
     };
 
     sales.forEach(sale => {
-      paymentBreakdown[sale.paymentMethod].count++;
-      paymentBreakdown[sale.paymentMethod].amount += sale.total;
+      const paymentType = sale.tenders[0]?.type || 'other';
+      if (paymentType === 'cash' || paymentType === 'card' || paymentType === 'digital') {
+        paymentBreakdown[paymentType].count++;
+        paymentBreakdown[paymentType].amount += sale.totals.grandTotal;
+      }
     });
 
     // Calculate percentages
@@ -162,39 +159,58 @@ class AnalyticsService implements IAnalyticsService {
   }
 
   // Get top-selling products
-  async getTopProducts(startDate: Date, endDate: Date, limit: number = 10): Promise<LegacyProductAnalytics[]> {
+  async getTopProducts(startDate: Date, endDate: Date, limit: number = 10): Promise<ProductAnalytics[]> {
     const sales = await salesService.getSalesByDateRange(startDate, endDate);
 
     // Aggregate product data
-    const productMap = new Map<string, LegacyProductAnalytics>();
+    const productMap = new Map<string, ProductAnalytics>();
 
-    sales.forEach(sale => {
-      sale.items.forEach(item => {
-        const key = item.id;
-        
+    for (const sale of sales) {
+      for (const item of sale.items) {
+        const key = item.productId.toString();
+
         if (productMap.has(key)) {
           const existing = productMap.get(key)!;
-          existing.totalQuantitySold += item.quantity;
-          existing.totalRevenue += item.price * item.quantity;
-          existing.salesCount++;
-          existing.averagePrice = existing.totalRevenue / existing.totalQuantitySold;
+          existing.total_sold += item.quantity;
+          existing.total_revenue += item.price * item.quantity;
         } else {
           productMap.set(key, {
-            productId: item.id,
-            productName: item.name,
-            totalQuantitySold: item.quantity,
-            totalRevenue: item.price * item.quantity,
-            averagePrice: item.price,
-            salesCount: 1
+            product_id: item.productId.toString(),
+            product_name: item.name,
+            sku: item.sku || '',
+            total_sold: item.quantity,
+            total_revenue: item.price * item.quantity,
+            total_profit: 0, // Will be calculated later
+            profit_margin: 0, // Will be calculated later
+            average_selling_price: item.price,
+            stock_level: 0, // Will be fetched later
+            turnover_rate: 0, // Will be calculated later
+            rank: 0
           });
         }
-      });
+      }
+    }
+
+    // Calculate total_profit, profit_margin, stock_level, turnover_rate, rank
+    for (const [key, productData] of productMap.entries()) {
+      const product = await productService.getProduct(parseInt(key));
+      if (product) {
+        productData.total_profit = productData.total_revenue - (product.cost * productData.total_sold);
+        productData.profit_margin = productData.total_revenue > 0 ? (productData.total_profit / productData.total_revenue) * 100 : 0;
+        productData.stock_level = product.stock_qty;
+        productData.turnover_rate = product.stock_qty > 0 ? productData.total_sold / product.stock_qty : 0;
+      }
+    }
+
+    // Sort by total_revenue and assign ranks
+    const sortedProducts = Array.from(productMap.values())
+      .sort((a, b) => b.total_revenue - a.total_revenue);
+
+    sortedProducts.forEach((product, index) => {
+      product.rank = index + 1;
     });
 
-    // Sort by total revenue and return top N
-    return Array.from(productMap.values())
-      .sort((a, b) => b.totalRevenue - a.totalRevenue)
-      .slice(0, limit);
+    return sortedProducts.slice(0, limit);
   }
 
   // Get daily breakdown for date range
@@ -233,7 +249,7 @@ class AnalyticsService implements IAnalyticsService {
     sales.forEach(sale => {
       const hour = sale.timestamp.getHours();
       hourlyData[hour].salesCount++;
-      hourlyData[hour].revenue += sale.total;
+      hourlyData[hour].revenue += sale.totals.grandTotal;
     });
 
     return hourlyData;
@@ -352,7 +368,7 @@ class AnalyticsService implements IAnalyticsService {
 
     csv += 'Product Name,Quantity Sold,Revenue,Average Price,Sales Count\n';
     analytics.topProducts.forEach(product => {
-      csv += `${product.productName},${product.totalQuantitySold},$${product.totalRevenue.toFixed(2)},$${product.averagePrice.toFixed(2)},${product.salesCount}\n`;
+      csv += `${product.product_name},${product.total_sold},$${product.total_revenue.toFixed(2)},$${product.average_selling_price.toFixed(2)},${product.rank}\n`;
     });
 
     csv += '\n';
@@ -369,7 +385,7 @@ class AnalyticsService implements IAnalyticsService {
     try {
       const sales = await this.getSalesInPeriod(period);
       
-      const totalSales = sales.reduce((sum, sale) => sum + sale.total, 0);
+      const totalSales = sales.reduce((sum, sale) => sum + sale.totals.grandTotal, 0);
       const totalTransactions = sales.length;
       const averageTransactionValue = totalTransactions > 0 ? totalSales / totalTransactions : 0;
       
@@ -378,7 +394,7 @@ class AnalyticsService implements IAnalyticsService {
       let grossProfit = 0;
 
       for (const sale of sales) {
-        const saleItems = await database.getSaleItems(sale.id);
+        const saleItems = await database.getSaleItems(Number(sale.id) || 0);
         totalItemsSold += saleItems.reduce((sum, item) => sum + item.qty, 0);
         
         // Calculate gross profit for this sale
@@ -397,7 +413,7 @@ class AnalyticsService implements IAnalyticsService {
       // Calculate growth rate by comparing to previous period
       const previousPeriod = this.getPreviousPeriod(period);
       const previousSales = await this.getSalesInPeriod(previousPeriod);
-      const previousTotalSales = previousSales.reduce((sum, sale) => sum + sale.total, 0);
+      const previousTotalSales = previousSales.reduce((sum, sale) => sum + sale.totals.grandTotal, 0);
       const growthRate = previousTotalSales > 0 ? 
         ((totalSales - previousTotalSales) / previousTotalSales) * 100 : 0;
 
@@ -431,7 +447,7 @@ class AnalyticsService implements IAnalyticsService {
 
         // Calculate metrics for this product
         for (const sale of sales) {
-          const saleItems = await database.getSaleItems(sale.id);
+          const saleItems = await database.getSaleItems(Number(sale.id) || 0);
           for (const item of saleItems) {
             if (item.product_id === product.id) {
               totalSold += item.qty;
@@ -533,7 +549,7 @@ class AnalyticsService implements IAnalyticsService {
       let totalCOGS = 0;
 
       for (const sale of sales) {
-        const saleItems = await database.getSaleItems(sale.id);
+        const saleItems = await database.getSaleItems(Number(sale.id) || 0);
         for (const item of saleItems) {
           const product = await productService.getProduct(item.product_id);
           if (product) {
@@ -576,7 +592,7 @@ class AnalyticsService implements IAnalyticsService {
       const newCustomers = Math.floor(totalCustomers * 0.7);
       const returningCustomers = totalCustomers - newCustomers;
       const customerRetentionRate = totalCustomers > 0 ? (returningCustomers / totalCustomers) * 100 : 0;
-      const totalRevenue = sales.reduce((sum, sale) => sum + sale.total, 0);
+      const totalRevenue = sales.reduce((sum, sale) => sum + sale.totals.grandTotal, 0);
       const averageOrderValue = totalCustomers > 0 ? totalRevenue / totalCustomers : 0;
       const averageCustomerLifetimeValue = averageOrderValue * 2.5;
       const purchaseFrequency = 1.2;
@@ -748,7 +764,7 @@ class AnalyticsService implements IAnalyticsService {
     
     sales.forEach(sale => {
       const date = new Date(sale.timestamp).toISOString().split('T')[0];
-      dailyData.set(date, (dailyData.get(date) || 0) + sale.total);
+      dailyData.set(date, (dailyData.get(date) || 0) + sale.totals.grandTotal);
     });
     
     return Array.from(dailyData.entries()).map(([date, total]) => ({

@@ -12,19 +12,19 @@ import {
   DocumentFilter,
   DocumentStats,
 } from '../types/documents';
-import { Sale, CartItem } from '../services/SimpleSalesService';
+import { RetailTransaction, CartItem, SaleLineItem } from '../types';
 import { businessConfigService } from './BusinessConfigService';
-import { StorageService } from './StorageService';
+import { storageService } from './StorageService';
 
 export class DocumentService {
   private static instance: DocumentService;
-  private storage: StorageService;
+  private storage = storageService;
   private readonly RECEIPTS_KEY = 'receipts_';
   private readonly INVOICES_KEY = 'invoices_';
   private readonly TEMPLATES_KEY = 'document_templates';
 
   private constructor() {
-    this.storage = StorageService.getInstance();
+    this.storage = storageService;
   }
 
   public static getInstance(): DocumentService {
@@ -36,7 +36,7 @@ export class DocumentService {
 
   // Receipt Generation
   async generateReceipt(
-    sale: Sale,
+    sale: RetailTransaction,
     options: DocumentGenerationOptions = { format: 'standard' }
   ): Promise<DocumentGenerationResult> {
     try {
@@ -58,15 +58,15 @@ export class DocumentService {
 
         // Convert sale items to document line items
         lineItems: this.convertSaleItemsToLineItems(sale.items),
-        subtotal: sale.subtotal,
-        taxTotal: sale.tax,
-        discountTotal: sale.discount,
-        grandTotal: sale.total,
+        subtotal: sale.totals.subTotal,
+        taxTotal: sale.totals.taxTotal,
+        discountTotal: sale.totals.discountTotal,
+        grandTotal: sale.totals.grandTotal,
 
         // Receipt specific
-        saleId: sale.id,
+        saleId: sale.id || 'unknown',
         payments: this.convertSalePayments(sale),
-        changeAmount: Math.max(0, sale.amountPaid - sale.total),
+        changeAmount: Math.max(0, (sale.tenders[0]?.amount || 0) - sale.totals.grandTotal),
         receiptFormat: options.format,
         printedAt: options.format === 'thermal' ? new Date() : undefined,
         emailedAt: options.delivery?.email ? new Date() : undefined,
@@ -191,7 +191,7 @@ export class DocumentService {
   async getReceipt(receiptId: string): Promise<Receipt | null> {
     try {
       const receiptData = await this.storage.getItem(`${this.RECEIPTS_KEY}${receiptId}`);
-      if (!receiptData) return null;
+      if (!receiptData) {return null;}
 
       const receipt = JSON.parse(receiptData);
       return {
@@ -210,7 +210,7 @@ export class DocumentService {
   async getInvoice(invoiceId: string): Promise<Invoice | null> {
     try {
       const invoiceData = await this.storage.getItem(`${this.INVOICES_KEY}${invoiceId}`);
-      if (!invoiceData) return null;
+      if (!invoiceData) {return null;}
 
       const invoice = JSON.parse(invoiceData);
       return {
@@ -235,7 +235,7 @@ export class DocumentService {
       const receiptKeys = keys.filter(key => key.startsWith(this.RECEIPTS_KEY));
       
       const receipts: Receipt[] = [];
-      for (const key of receiptKeys) {
+      for (const key of receiptKeys as string[]) {
         const receiptData = await this.storage.getItem(key);
         if (receiptData) {
           const receipt = JSON.parse(receiptData);
@@ -262,7 +262,7 @@ export class DocumentService {
       const invoiceKeys = keys.filter(key => key.startsWith(this.INVOICES_KEY));
       
       const invoices: Invoice[] = [];
-      for (const key of invoiceKeys) {
+      for (const key of invoiceKeys as string[]) {
         const invoiceData = await this.storage.getItem(key);
         if (invoiceData) {
           const invoice = JSON.parse(invoiceData);
@@ -745,61 +745,76 @@ export class DocumentService {
   }
 
   // Helper Methods
-  private extractCustomerInfo(sale: Sale): CustomerInfo | undefined {
+  private extractCustomerInfo(sale: RetailTransaction): CustomerInfo | undefined {
     // For now, return undefined since SimpleSalesService doesn't store customer info
     // This could be enhanced later to extract from sale metadata
     return undefined;
   }
 
-  private convertSaleItemsToLineItems(saleItems: CartItem[]): DocumentLineItem[] {
+  private convertSaleItemsToLineItems(saleItems: SaleLineItem[]): DocumentLineItem[] {
     return saleItems.map(item => ({
       id: `line_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
-      productId: item.id.startsWith('manual_') ? undefined : parseInt(item.id),
+      productId: item.productId,
       description: item.name,
       quantity: item.quantity,
-      unitPrice: item.price,
-      taxRate: 0.08, // Default 8%, could be enhanced to get from product data
-      taxAmount: item.price * item.quantity * 0.08,
-      discount: 0,
-      subtotal: item.price * item.quantity,
-      total: item.price * item.quantity * 1.08,
+      unitPrice: item.unitPrice,
+      taxRate: item.taxes?.[0]?.rate || 0.08,
+      taxAmount: item.lineTotal.tax,
+      discount: item.discounts?.reduce((sum, d) => sum + d.value, 0) || 0,
+      subtotal: item.lineTotal.net,
+      total: item.lineTotal.gross,
       sku: item.sku,
     }));
   }
 
-  private convertSalePayments(sale: Sale): PaymentInfo[] {
+  private convertSalePayments(sale: RetailTransaction): PaymentInfo[] {
     return [{
-      method: sale.paymentMethod,
-      amount: sale.amountPaid,
+      method: this.mapTenderTypeToPaymentMethod(sale.tenders[0]?.type) || 'cash',
+      amount: sale.tenders[0]?.amount || 0,
       timestamp: sale.timestamp,
     }];
   }
 
+  private mapTenderTypeToPaymentMethod(tenderType?: string): 'cash' | 'card' | 'digital' | 'check' | 'bank_transfer' {
+    switch (tenderType) {
+      case 'cash':
+        return 'cash';
+      case 'card':
+        return 'card';
+      case 'digital':
+        return 'digital';
+      case 'store_credit':
+      case 'other':
+      default:
+        return 'cash';
+    }
+  }
+
   private filterDocuments<T extends Receipt | Invoice>(documents: T[], filter?: DocumentFilter): T[] {
-    if (!filter) return documents;
+    if (!filter) {return documents;}
 
     return documents.filter(doc => {
-      if (filter.type && doc.type !== filter.type) return false;
-      if (filter.status && doc.status !== filter.status) return false;
+      if (filter.type && doc.type !== filter.type) {return false;}
+      if (filter.status && doc.status !== filter.status) {return false;}
       
       if (filter.dateRange) {
         const docDate = doc.createdAt;
-        if (docDate < filter.dateRange.from || docDate > filter.dateRange.to) return false;
+        if (docDate < filter.dateRange.from || docDate > filter.dateRange.to) {return false;}
       }
       
       if (filter.customerName && doc.customerInfo) {
         const customerName = doc.customerInfo.name.toLowerCase();
-        if (!customerName.includes(filter.customerName.toLowerCase())) return false;
+        if (!customerName.includes(filter.customerName.toLowerCase())) {return false;}
       }
       
       if (filter.amountRange) {
-        if (doc.grandTotal < filter.amountRange.min || doc.grandTotal > filter.amountRange.max) return false;
+        if (doc.grandTotal < filter.amountRange.min || doc.grandTotal > filter.amountRange.max) {return false;}
       }
       
       if (filter.searchQuery) {
         const query = filter.searchQuery.toLowerCase();
         const searchableText = `${doc.documentNumber} ${doc.notes || ''} ${doc.customerInfo?.name || ''}`.toLowerCase();
-        if (!searchableText.includes(query)) return false;
+        if (!searchableText.includes(query)) {return false;}
       }
       
       return true;

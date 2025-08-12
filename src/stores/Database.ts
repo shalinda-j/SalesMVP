@@ -9,8 +9,17 @@ import {
     CreateSaleInput,
     CreateSaleItemInput,
     CreatePaymentInput,
-    DatabaseService
+    DatabaseService,
+    BusinessSettings,
+    UserProfile,
+    AuditLog
 } from '../types';
+import {
+    User,
+    UserRole,
+    CreateUserInput,
+    UpdateUserInput
+} from '../types/auth';
 
 class Database implements DatabaseService {
     private db: SQLite.SQLiteDatabase | null = null;
@@ -30,14 +39,21 @@ class Database implements DatabaseService {
      */
     public async initialize(): Promise<void> {
         try {
+            console.log('Opening SQLite database...');
             this.db = await SQLite.openDatabaseAsync('salesMVP.db');
+            console.log('SQLite database opened successfully');
+            
+            console.log('Creating database tables...');
             await this.createTables();
+            console.log('Database tables created successfully');
+            
             console.log('Database initialized successfully');
         } catch (error) {
             console.error('Failed to initialize database:', error);
+            this.db = null; // Reset on failure
             throw new DatabaseError({
                 code: 'INIT_ERROR',
-                message: 'Failed to initialize database'
+                message: `Failed to initialize database: ${error instanceof Error ? error.message : 'Unknown error'}`
             });
         }
     }
@@ -51,6 +67,61 @@ class Database implements DatabaseService {
         }
 
         try {
+            console.log('Creating users table...');
+            // Create users table
+            await this.db.execAsync(`
+        CREATE TABLE IF NOT EXISTS users (
+          id TEXT PRIMARY KEY,
+          username TEXT UNIQUE NOT NULL,
+          email TEXT UNIQUE NOT NULL,
+          first_name TEXT NOT NULL,
+          last_name TEXT NOT NULL,
+          role TEXT NOT NULL CHECK (role IN ('admin', 'manager', 'cashier')),
+          is_active INTEGER DEFAULT 1,
+          last_login DATETIME,
+          created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+          updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        );
+      `);
+
+            // Create user_passwords table for secure password storage
+            await this.db.execAsync(`
+        CREATE TABLE IF NOT EXISTS user_passwords (
+          user_id TEXT PRIMARY KEY,
+          password_hash TEXT NOT NULL,
+          salt TEXT NOT NULL,
+          created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+          updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+          FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE
+        );
+      `);
+
+            // Create auth_sessions table
+            await this.db.execAsync(`
+        CREATE TABLE IF NOT EXISTS auth_sessions (
+          id TEXT PRIMARY KEY,
+          user_id TEXT NOT NULL,
+          token TEXT UNIQUE NOT NULL,
+          expires_at DATETIME NOT NULL,
+          created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+          FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE
+        );
+      `);
+
+            // Create audit_logs table
+            await this.db.execAsync(`
+        CREATE TABLE IF NOT EXISTS audit_logs (
+          id TEXT PRIMARY KEY,
+          user_id TEXT,
+          action TEXT NOT NULL,
+          resource TEXT NOT NULL,
+          details TEXT,
+          ip_address TEXT,
+          timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
+          FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE SET NULL
+        );
+      `);
+
             // Create products table
             await this.db.execAsync(`
         CREATE TABLE IF NOT EXISTS products (
@@ -118,6 +189,40 @@ class Database implements DatabaseService {
         );
       `);
 
+            // Create business_settings table
+            await this.db.execAsync(`
+        CREATE TABLE IF NOT EXISTS business_settings (
+          id TEXT PRIMARY KEY,
+          business_name TEXT NOT NULL,
+          business_logo TEXT,
+          business_address TEXT NOT NULL,
+          business_phone TEXT NOT NULL,
+          business_email TEXT NOT NULL,
+          currency TEXT NOT NULL DEFAULT 'USD',
+          currency_symbol TEXT NOT NULL DEFAULT '$',
+          tax_rate REAL NOT NULL DEFAULT 0.08,
+          timezone TEXT NOT NULL DEFAULT 'UTC',
+          language TEXT NOT NULL DEFAULT 'en',
+          created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+          updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        );
+      `);
+
+            // Create user_profiles table
+            await this.db.execAsync(`
+        CREATE TABLE IF NOT EXISTS user_profiles (
+          id TEXT PRIMARY KEY,
+          user_id TEXT NOT NULL,
+          avatar TEXT,
+          phone_number TEXT,
+          address TEXT,
+          preferences TEXT NOT NULL DEFAULT '{"theme":"auto","notifications":true,"language":"en"}',
+          created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+          updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+          FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE
+        );
+      `);
+
             // Create sync conflicts table
             await this.db.execAsync(`
         CREATE TABLE IF NOT EXISTS sync_conflicts (
@@ -173,12 +278,20 @@ class Database implements DatabaseService {
      */
     private getConnection(): SQLite.SQLiteDatabase {
         if (!this.db) {
+            console.error('Database not initialized. Attempting to initialize...');
             throw new DatabaseError({
                 code: 'NO_CONNECTION',
                 message: 'Database not initialized. Call initialize() first.'
             });
         }
         return this.db;
+    }
+
+    /**
+     * Check if database is initialized
+     */
+    public isInitialized(): boolean {
+        return this.db !== null;
     }
 
     // Product operations
@@ -812,6 +925,747 @@ class Database implements DatabaseService {
                 code: 'GET_SALES_SUMMARY_ERROR',
                 message: 'Failed to retrieve sales summary',
                 table: 'sales'
+            });
+        }
+    }
+
+    // ==================== USER MANAGEMENT METHODS ====================
+
+    /**
+     * Get all users
+     */
+    public async getAllUsers(): Promise<User[]> {
+        const db = this.getConnection();
+
+        try {
+            const users = await db.getAllAsync<{
+                id: string;
+                username: string;
+                email: string;
+                first_name: string;
+                last_name: string;
+                role: string;
+                is_active: number;
+                last_login: string | null;
+                created_at: string;
+                updated_at: string;
+            }>('SELECT * FROM users ORDER BY created_at DESC');
+
+            return users.map(user => ({
+                id: user.id,
+                username: user.username,
+                email: user.email,
+                firstName: user.first_name,
+                lastName: user.last_name,
+                role: user.role as UserRole,
+                isActive: Boolean(user.is_active),
+                lastLogin: user.last_login ? new Date(user.last_login) : undefined,
+                createdAt: new Date(user.created_at),
+                updatedAt: new Date(user.updated_at)
+            }));
+        } catch (error) {
+            console.error('Failed to get all users:', error);
+            throw new DatabaseError({
+                code: 'GET_USERS_ERROR',
+                message: 'Failed to retrieve users',
+                table: 'users'
+            });
+        }
+    }
+
+    /**
+     * Get user by ID
+     */
+    public async getUser(id: string): Promise<User | null> {
+        const db = this.getConnection();
+
+        try {
+            const user = await db.getFirstAsync<{
+                id: string;
+                username: string;
+                email: string;
+                first_name: string;
+                last_name: string;
+                role: string;
+                is_active: number;
+                last_login: string | null;
+                created_at: string;
+                updated_at: string;
+            }>('SELECT * FROM users WHERE id = ?', [id]);
+
+            if (!user) {return null;}
+
+            return {
+                id: user.id,
+                username: user.username,
+                email: user.email,
+                firstName: user.first_name,
+                lastName: user.last_name,
+                role: user.role as UserRole,
+                isActive: Boolean(user.is_active),
+                lastLogin: user.last_login ? new Date(user.last_login) : undefined,
+                createdAt: new Date(user.created_at),
+                updatedAt: new Date(user.updated_at)
+            };
+        } catch (error) {
+            console.error('Failed to get user:', error);
+            throw new DatabaseError({
+                code: 'GET_USER_ERROR',
+                message: 'Failed to retrieve user',
+                table: 'users'
+            });
+        }
+    }
+
+    /**
+     * Get user by username
+     */
+    public async getUserByUsername(username: string): Promise<User | null> {
+        const db = this.getConnection();
+
+        try {
+            const user = await db.getFirstAsync<{
+                id: string;
+                username: string;
+                email: string;
+                first_name: string;
+                last_name: string;
+                role: string;
+                is_active: number;
+                last_login: string | null;
+                created_at: string;
+                updated_at: string;
+            }>('SELECT * FROM users WHERE username = ?', [username]);
+
+            if (!user) {return null;}
+
+            return {
+                id: user.id,
+                username: user.username,
+                email: user.email,
+                firstName: user.first_name,
+                lastName: user.last_name,
+                role: user.role as UserRole,
+                isActive: Boolean(user.is_active),
+                lastLogin: user.last_login ? new Date(user.last_login) : undefined,
+                createdAt: new Date(user.created_at),
+                updatedAt: new Date(user.updated_at)
+            };
+        } catch (error) {
+            console.error('Failed to get user by username:', error);
+            throw new DatabaseError({
+                code: 'GET_USER_BY_USERNAME_ERROR',
+                message: 'Failed to retrieve user by username',
+                table: 'users'
+            });
+        }
+    }
+
+    /**
+     * Create new user
+     */
+    public async createUser(input: CreateUserInput): Promise<User> {
+        const db = this.getConnection();
+
+        try {
+            const userId = `user-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+            const now = new Date().toISOString();
+
+            await db.runAsync(
+                `INSERT INTO users (id, username, email, first_name, last_name, role, is_active, created_at, updated_at)
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+                [
+                    userId,
+                    input.username,
+                    input.email,
+                    input.firstName,
+                    input.lastName,
+                    input.role,
+                    1, // is_active
+                    now,
+                    now
+                ]
+            );
+
+            return {
+                id: userId,
+                username: input.username,
+                email: input.email,
+                firstName: input.firstName,
+                lastName: input.lastName,
+                role: input.role,
+                isActive: true,
+                createdAt: new Date(now),
+                updatedAt: new Date(now)
+            };
+        } catch (error) {
+            console.error('Failed to create user:', error);
+            throw new DatabaseError({
+                code: 'CREATE_USER_ERROR',
+                message: 'Failed to create user',
+                table: 'users'
+            });
+        }
+    }
+
+    /**
+     * Update user
+     */
+    public async updateUser(input: UpdateUserInput): Promise<User> {
+        const db = this.getConnection();
+
+        try {
+            const existingUser = await this.getUser(input.id);
+            if (!existingUser) {
+                throw new DatabaseError({
+                    code: 'USER_NOT_FOUND',
+                    message: 'User not found',
+                    table: 'users'
+                });
+            }
+
+            const updates: string[] = [];
+            const values: any[] = [];
+
+            if (input.username !== undefined) {
+                updates.push('username = ?');
+                values.push(input.username);
+            }
+            if (input.email !== undefined) {
+                updates.push('email = ?');
+                values.push(input.email);
+            }
+            if (input.firstName !== undefined) {
+                updates.push('first_name = ?');
+                values.push(input.firstName);
+            }
+            if (input.lastName !== undefined) {
+                updates.push('last_name = ?');
+                values.push(input.lastName);
+            }
+            if (input.role !== undefined) {
+                updates.push('role = ?');
+                values.push(input.role);
+            }
+            if (input.isActive !== undefined) {
+                updates.push('is_active = ?');
+                values.push(input.isActive ? 1 : 0);
+            }
+            if (input.lastLogin !== undefined) {
+                updates.push('last_login = ?');
+                values.push(input.lastLogin.toISOString());
+            }
+
+            updates.push('updated_at = ?');
+            values.push(new Date().toISOString());
+            values.push(input.id);
+
+            if (updates.length > 1) { // Only update if there are actual changes
+                // Filter out undefined values and their corresponding updates
+                const filteredUpdates: string[] = [];
+                const filteredValues: any[] = [];
+                
+                for (let i = 0; i < updates.length; i++) {
+                    if (values[i] !== undefined) {
+                        filteredUpdates.push(updates[i]);
+                        filteredValues.push(values[i]);
+                    }
+                }
+                
+                if (filteredUpdates.length > 0) {
+                    await db.runAsync(
+                        `UPDATE users SET ${filteredUpdates.join(', ')} WHERE id = ?`,
+                        filteredValues
+                    );
+                }
+            }
+
+            return await this.getUser(input.id) as User;
+        } catch (error) {
+            console.error('Failed to update user:', error);
+            throw new DatabaseError({
+                code: 'UPDATE_USER_ERROR',
+                message: 'Failed to update user',
+                table: 'users'
+            });
+        }
+    }
+
+    /**
+     * Delete user
+     */
+    public async deleteUser(id: string): Promise<boolean> {
+        const db = this.getConnection();
+
+        try {
+            const result = await db.runAsync('DELETE FROM users WHERE id = ?', [id]);
+            return result.changes > 0;
+        } catch (error) {
+            console.error('Failed to delete user:', error);
+            throw new DatabaseError({
+                code: 'DELETE_USER_ERROR',
+                message: 'Failed to delete user',
+                table: 'users'
+            });
+        }
+    }
+
+    /**
+     * Save user password
+     */
+    public async saveUserPassword(userId: string, passwordHash: string, salt: string): Promise<void> {
+        const db = this.getConnection();
+
+        try {
+            const now = new Date().toISOString();
+            
+            await db.runAsync(
+                `INSERT OR REPLACE INTO user_passwords (user_id, password_hash, salt, created_at, updated_at)
+                 VALUES (?, ?, ?, ?, ?)`,
+                [userId, passwordHash, salt, now, now]
+            );
+        } catch (error) {
+            console.error('Failed to save user password:', error);
+            throw new DatabaseError({
+                code: 'SAVE_PASSWORD_ERROR',
+                message: 'Failed to save user password',
+                table: 'user_passwords'
+            });
+        }
+    }
+
+    /**
+     * Get user password hash
+     */
+    public async getUserPassword(userId: string): Promise<{ passwordHash: string; salt: string } | null> {
+        const db = this.getConnection();
+
+        try {
+            const password = await db.getFirstAsync<{
+                password_hash: string;
+                salt: string;
+            }>('SELECT password_hash, salt FROM user_passwords WHERE user_id = ?', [userId]);
+
+            return password ? {
+                passwordHash: password.password_hash,
+                salt: password.salt
+            } : null;
+        } catch (error) {
+            console.error('Failed to get user password:', error);
+            throw new DatabaseError({
+                code: 'GET_PASSWORD_ERROR',
+                message: 'Failed to retrieve user password',
+                table: 'user_passwords'
+            });
+        }
+    }
+
+    /**
+     * Save auth session
+     */
+    public async saveAuthSession(sessionId: string, userId: string, token: string, expiresAt: Date): Promise<void> {
+        const db = this.getConnection();
+
+        try {
+            await db.runAsync(
+                `INSERT INTO auth_sessions (id, user_id, token, expires_at, created_at)
+                 VALUES (?, ?, ?, ?, ?)`,
+                [sessionId, userId, token, expiresAt.toISOString(), new Date().toISOString()]
+            );
+        } catch (error) {
+            console.error('Failed to save auth session:', error);
+            throw new DatabaseError({
+                code: 'SAVE_SESSION_ERROR',
+                message: 'Failed to save authentication session',
+                table: 'auth_sessions'
+            });
+        }
+    }
+
+    /**
+     * Get auth session by token
+     */
+    public async getAuthSession(token: string): Promise<{
+        id: string;
+        userId: string;
+        token: string;
+        expiresAt: Date;
+        createdAt: Date;
+    } | null> {
+        const db = this.getConnection();
+
+        try {
+            const session = await db.getFirstAsync<{
+                id: string;
+                user_id: string;
+                token: string;
+                expires_at: string;
+                created_at: string;
+            }>('SELECT * FROM auth_sessions WHERE token = ?', [token]);
+
+            if (!session) {return null;}
+
+            return {
+                id: session.id,
+                userId: session.user_id,
+                token: session.token,
+                expiresAt: new Date(session.expires_at),
+                createdAt: new Date(session.created_at)
+            };
+        } catch (error) {
+            console.error('Failed to get auth session:', error);
+            throw new DatabaseError({
+                code: 'GET_SESSION_ERROR',
+                message: 'Failed to retrieve authentication session',
+                table: 'auth_sessions'
+            });
+        }
+    }
+
+    /**
+     * Delete auth session
+     */
+    public async deleteAuthSession(token: string): Promise<boolean> {
+        const db = this.getConnection();
+
+        try {
+            const result = await db.runAsync('DELETE FROM auth_sessions WHERE token = ?', [token]);
+            return result.changes > 0;
+        } catch (error) {
+            console.error('Failed to delete auth session:', error);
+            throw new DatabaseError({
+                code: 'DELETE_SESSION_ERROR',
+                message: 'Failed to delete authentication session',
+                table: 'auth_sessions'
+            });
+        }
+    }
+
+    /**
+     * Clean expired sessions
+     */
+    public async cleanExpiredSessions(): Promise<number> {
+        const db = this.getConnection();
+
+        try {
+            const result = await db.runAsync('DELETE FROM auth_sessions WHERE expires_at < ?', [new Date().toISOString()]);
+            return result.changes;
+        } catch (error) {
+            console.error('Failed to clean expired sessions:', error);
+            throw new DatabaseError({
+                code: 'CLEAN_SESSIONS_ERROR',
+                message: 'Failed to clean expired sessions',
+                table: 'auth_sessions'
+            });
+        }
+    }
+
+    /**
+     * Log audit event
+     */
+    public async logAuditEvent(
+        userId: string | null,
+        action: string,
+        resource: string,
+        details?: any,
+        ipAddress?: string
+    ): Promise<void> {
+        const db = this.getConnection();
+
+        try {
+            const auditId = `audit-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+            
+            await db.runAsync(
+                `INSERT INTO audit_logs (id, user_id, action, resource, details, ip_address, timestamp)
+                 VALUES (?, ?, ?, ?, ?, ?, ?)`,
+                [
+                    auditId,
+                    userId,
+                    action,
+                    resource,
+                    details ? JSON.stringify(details) : null,
+                    ipAddress || null,
+                    new Date().toISOString()
+                ]
+            );
+        } catch (error) {
+            console.error('Failed to log audit event:', error);
+            // Don't throw error for audit logging failures
+        }
+    }
+
+    // Business Settings Methods
+    /**
+     * Get business settings
+     */
+    public async getBusinessSettings(): Promise<BusinessSettings | null> {
+        const db = this.getConnection();
+
+        try {
+            const result = await db.getAllAsync('SELECT * FROM business_settings LIMIT 1');
+            if (result.length === 0) {
+                return null;
+            }
+
+            const row = result[0] as any;
+            return {
+                id: row.id,
+                businessName: row.business_name,
+                businessLogo: row.business_logo,
+                businessAddress: row.business_address,
+                businessPhone: row.business_phone,
+                businessEmail: row.business_email,
+                currency: row.currency,
+                currencySymbol: row.currency_symbol,
+                taxRate: row.tax_rate,
+                timezone: row.timezone,
+                language: row.language,
+                createdAt: new Date(row.created_at),
+                updatedAt: new Date(row.updated_at)
+            };
+        } catch (error) {
+            console.error('Failed to get business settings:', error);
+            throw new DatabaseError({
+                code: 'GET_BUSINESS_SETTINGS_ERROR',
+                message: 'Failed to retrieve business settings',
+                table: 'business_settings'
+            });
+        }
+    }
+
+    /**
+     * Create or update business settings
+     */
+    public async saveBusinessSettings(settings: Partial<BusinessSettings>): Promise<BusinessSettings> {
+        const db = this.getConnection();
+
+        try {
+            const existing = await this.getBusinessSettings();
+            
+            if (existing) {
+                // Update existing settings
+                const updates = [];
+                const values = [];
+                
+                if (settings.businessName !== undefined) {
+                    updates.push('business_name = ?');
+                    values.push(settings.businessName);
+                }
+                if (settings.businessLogo !== undefined) {
+                    updates.push('business_logo = ?');
+                    values.push(settings.businessLogo);
+                }
+                if (settings.businessAddress !== undefined) {
+                    updates.push('business_address = ?');
+                    values.push(settings.businessAddress);
+                }
+                if (settings.businessPhone !== undefined) {
+                    updates.push('business_phone = ?');
+                    values.push(settings.businessPhone);
+                }
+                if (settings.businessEmail !== undefined) {
+                    updates.push('business_email = ?');
+                    values.push(settings.businessEmail);
+                }
+                if (settings.currency !== undefined) {
+                    updates.push('currency = ?');
+                    values.push(settings.currency);
+                }
+                if (settings.currencySymbol !== undefined) {
+                    updates.push('currency_symbol = ?');
+                    values.push(settings.currencySymbol);
+                }
+                if (settings.taxRate !== undefined) {
+                    updates.push('tax_rate = ?');
+                    values.push(settings.taxRate);
+                }
+                if (settings.timezone !== undefined) {
+                    updates.push('timezone = ?');
+                    values.push(settings.timezone);
+                }
+                if (settings.language !== undefined) {
+                    updates.push('language = ?');
+                    values.push(settings.language);
+                }
+
+                updates.push('updated_at = ?');
+                values.push(new Date().toISOString());
+                values.push(existing.id);
+
+                await db.runAsync(
+                    `UPDATE business_settings SET ${updates.join(', ')} WHERE id = ?`,
+                    values
+                );
+
+                return await this.getBusinessSettings() as BusinessSettings;
+            } else {
+                // Create new settings
+                const settingsId = `business-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+                
+                await db.runAsync(
+                    `INSERT INTO business_settings (
+                        id, business_name, business_logo, business_address, business_phone, 
+                        business_email, currency, currency_symbol, tax_rate, timezone, language
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+                    [
+                        settingsId,
+                        settings.businessName || 'My Business',
+                        settings.businessLogo || null,
+                        settings.businessAddress || '',
+                        settings.businessPhone || '',
+                        settings.businessEmail || '',
+                        settings.currency || 'USD',
+                        settings.currencySymbol || '$',
+                        settings.taxRate || 0.08,
+                        settings.timezone || 'UTC',
+                        settings.language || 'en'
+                    ]
+                );
+
+                return await this.getBusinessSettings() as BusinessSettings;
+            }
+        } catch (error) {
+            console.error('Failed to save business settings:', error);
+            throw new DatabaseError({
+                code: 'SAVE_BUSINESS_SETTINGS_ERROR',
+                message: 'Failed to save business settings',
+                table: 'business_settings'
+            });
+        }
+    }
+
+    // User Profile Methods
+    /**
+     * Get user profile
+     */
+    public async getUserProfile(userId: string): Promise<UserProfile | null> {
+        const db = this.getConnection();
+
+        try {
+            const result = await db.getAllAsync('SELECT * FROM user_profiles WHERE user_id = ?', [userId]);
+            if (result.length === 0) {
+                return null;
+            }
+
+            const row = result[0] as any;
+            return {
+                id: row.id,
+                userId: row.user_id,
+                avatar: row.avatar,
+                phoneNumber: row.phone_number,
+                address: row.address,
+                preferences: JSON.parse(row.preferences),
+                createdAt: new Date(row.created_at),
+                updatedAt: new Date(row.updated_at)
+            };
+        } catch (error) {
+            console.error('Failed to get user profile:', error);
+            throw new DatabaseError({
+                code: 'GET_USER_PROFILE_ERROR',
+                message: 'Failed to retrieve user profile',
+                table: 'user_profiles'
+            });
+        }
+    }
+
+    /**
+     * Create or update user profile
+     */
+    public async saveUserProfile(profile: UserProfile): Promise<UserProfile> {
+        const db = this.getConnection();
+
+        try {
+            const existing = await this.getUserProfile(profile.userId);
+            
+            if (existing) {
+                // Update existing profile
+                const updates = [];
+                const values = [];
+                
+                if (profile.avatar !== undefined) {
+                    updates.push('avatar = ?');
+                    values.push(profile.avatar);
+                }
+                if (profile.phoneNumber !== undefined) {
+                    updates.push('phone_number = ?');
+                    values.push(profile.phoneNumber);
+                }
+                if (profile.address !== undefined) {
+                    updates.push('address = ?');
+                    values.push(profile.address);
+                }
+                if (profile.preferences !== undefined) {
+                    updates.push('preferences = ?');
+                    values.push(JSON.stringify(profile.preferences));
+                }
+
+                updates.push('updated_at = ?');
+                values.push(new Date().toISOString());
+                values.push(existing.id);
+
+                await db.runAsync(
+                    `UPDATE user_profiles SET ${updates.join(', ')} WHERE id = ?`,
+                    values
+                );
+
+                return await this.getUserProfile(profile.userId) as UserProfile;
+            } else {
+                // Create new profile
+                const profileId = `profile-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+                
+                await db.runAsync(
+                    `INSERT INTO user_profiles (
+                        id, user_id, avatar, phone_number, address, preferences
+                    ) VALUES (?, ?, ?, ?, ?, ?)`,
+                    [
+                        profileId,
+                        profile.userId,
+                        profile.avatar || null,
+                        profile.phoneNumber || null,
+                        profile.address || null,
+                        JSON.stringify(profile.preferences || {
+                            theme: 'auto',
+                            notifications: true,
+                            language: 'en'
+                        })
+                    ]
+                );
+
+                return await this.getUserProfile(profile.userId) as UserProfile;
+            }
+        } catch (error) {
+            console.error('Failed to save user profile:', error);
+            throw new DatabaseError({
+                code: 'SAVE_USER_PROFILE_ERROR',
+                message: 'Failed to save user profile',
+                table: 'user_profiles'
+            });
+        }
+    }
+
+    /**
+     * Get audit logs
+     */
+    public async getAuditLogs(): Promise<AuditLog[]> {
+        const db = this.getConnection();
+
+        try {
+            const result = await db.getAllAsync('SELECT * FROM audit_logs ORDER BY timestamp DESC');
+            return result.map((row: any) => ({
+                id: row.id,
+                userId: row.user_id,
+                action: row.action,
+                resource: row.resource,
+                details: row.details ? JSON.parse(row.details) : null,
+                ipAddress: row.ip_address,
+                timestamp: new Date(row.timestamp)
+            }));
+        } catch (error) {
+            console.error('Failed to get audit logs:', error);
+            throw new DatabaseError({
+                code: 'GET_AUDIT_LOGS_ERROR',
+                message: 'Failed to retrieve audit logs',
+                table: 'audit_logs'
             });
         }
     }

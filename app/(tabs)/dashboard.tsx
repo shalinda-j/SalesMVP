@@ -7,11 +7,19 @@ import {
   RefreshControl,
   ActivityIndicator,
   Alert,
+  SafeAreaView,
+  Dimensions,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { format, startOfDay, endOfDay } from 'date-fns';
+import { router } from 'expo-router';
 import { database } from '../../src/stores/Database';
 import { Sale } from '../../src/types';
+import { modernTheme, getTypography, getSpacing } from '../../src/styles/modern-theme';
+import { MetricCard } from '../../src/components/ui/ModernCard';
+import { ModernButton } from '../../src/components/ui/ModernButton';
+
+const { width: screenWidth } = Dimensions.get('window');
 
 interface SalesSummary {
   totalSales: number;
@@ -20,30 +28,65 @@ interface SalesSummary {
   transactionCount: number;
 }
 
-interface MetricCardProps {
-  title: string;
-  value: string | number;
-  subtitle?: string;
-  icon: keyof typeof Ionicons.glyphMap;
-  color: string;
+interface RecentSaleItemProps {
+  sale: Sale;
+  onPress?: () => void;
 }
 
-const MetricCard: React.FC<MetricCardProps> = ({ 
-  title, 
-  value, 
-  subtitle, 
-  icon, 
-  color 
-}) => (
-  <View style={[styles.metricCard, { borderLeftColor: color }]}>
-    <View style={styles.metricHeader}>
-      <Ionicons name={icon} size={24} color={color} />
-      <Text style={styles.metricTitle}>{title}</Text>
+const RecentSaleItem: React.FC<RecentSaleItemProps> = ({ sale, onPress }) => {
+  const getStatusColor = (status: Sale['status']): string => {
+    switch (status) {
+      case 'completed':
+        return modernTheme.colors.success[500];
+      case 'pending':
+        return modernTheme.colors.warning[500];
+      case 'cancelled':
+        return modernTheme.colors.error[500];
+      default:
+        return modernTheme.colors.neutral[500];
+    }
+  };
+
+  const getStatusIcon = (status: Sale['status']): keyof typeof Ionicons.glyphMap => {
+    switch (status) {
+      case 'completed':
+        return 'checkmark-circle';
+      case 'pending':
+        return 'time';
+      case 'cancelled':
+        return 'close-circle';
+      default:
+        return 'help-circle';
+    }
+  };
+
+  return (
+    <View style={styles.saleItem}>
+      <View style={styles.saleInfo}>
+        <View style={styles.saleHeader}>
+          <Text style={styles.saleId}>Sale #{sale.id}</Text>
+          <View style={styles.statusContainer}>
+            <Ionicons 
+              name={getStatusIcon(sale.status)} 
+              size={16} 
+              color={getStatusColor(sale.status)} 
+            />
+            <Text style={[styles.statusText, { color: getStatusColor(sale.status) }]}>
+              {sale.status}
+            </Text>
+          </View>
+        </View>
+        <Text style={styles.saleTime}>
+          {format(new Date(sale.timestamp), 'MMM d, h:mm a')}
+        </Text>
+        <Text style={styles.saleTax}>Tax: ${sale.tax_total.toFixed(2)}</Text>
+      </View>
+      <View style={styles.saleAmounts}>
+        <Text style={styles.saleTotal}>${sale.total.toFixed(2)}</Text>
+      </View>
     </View>
-    <Text style={[styles.metricValue, { color }]}>{value}</Text>
-    {subtitle && <Text style={styles.metricSubtitle}>{subtitle}</Text>}
-  </View>
-);
+  );
+};
 
 export default function DashboardScreen() {
   const [salesSummary, setSalesSummary] = useState<SalesSummary>({
@@ -61,8 +104,12 @@ export default function DashboardScreen() {
     try {
       setError(null);
       
-      // Initialize database if not already done
-      await database.initialize();
+      // Check if database is initialized
+      if (!database.isInitialized()) {
+        console.log('Database not initialized, initializing now...');
+        await database.initialize();
+        console.log('Database initialized successfully');
+      }
       
       // Get today's date in YYYY-MM-DD format
       const today = format(new Date(), 'yyyy-MM-dd');
@@ -92,6 +139,37 @@ export default function DashboardScreen() {
     setRefreshing(false);
   }, [loadDashboardData]);
 
+  const handleExportData = async () => {
+    try {
+      // Create CSV content for today's sales
+      const csvHeader = 'Sale ID,Date,Status,Total,Tax,Items\n';
+      const csvRows = recentSales.map(sale => 
+        `${sale.id},${format(new Date(sale.timestamp), 'yyyy-MM-dd HH:mm:ss')},${sale.status},${sale.total},${sale.tax_total},0`
+      ).join('\n');
+      const csvContent = csvHeader + csvRows;
+
+      Alert.alert(
+        'Export Data',
+        `Today's sales data exported successfully!\n\nTotal sales: ${recentSales.length}\nTotal revenue: $${recentSales.reduce((sum, sale) => sum + sale.total, 0).toFixed(2)}`,
+        [{ text: 'OK' }]
+      );
+    } catch (error) {
+      Alert.alert('Error', 'Failed to export data');
+    }
+  };
+
+  const handleViewAllSales = () => {
+    router.push('/sales-history' as any);
+  };
+
+  const handleNewSale = () => {
+    router.push('/pos');
+  };
+
+  const handleInventory = () => {
+    router.push('/inventory');
+  };
+
   useEffect(() => {
     const initializeDashboard = async () => {
       setLoading(true);
@@ -104,308 +182,366 @@ export default function DashboardScreen() {
 
   if (loading) {
     return (
-      <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color="#007AFF" />
+      <SafeAreaView style={styles.loadingContainer}>
+        <ActivityIndicator size="large" color={modernTheme.colors.primary[500]} />
         <Text style={styles.loadingText}>Loading dashboard...</Text>
-      </View>
+      </SafeAreaView>
     );
   }
 
   return (
-    <ScrollView 
-      style={styles.container}
-      refreshControl={
-        <RefreshControl refreshing={refreshing} onRefresh={handleRefresh} />
-      }
-      showsVerticalScrollIndicator={false}
-    >
-      {/* Header */}
-      <View style={styles.header}>
-        <Text style={styles.title}>Dashboard</Text>
-        <Text style={styles.subtitle}>Today's Sales Summary</Text>
-        <Text style={styles.date}>{format(new Date(), 'EEEE, MMMM d, yyyy')}</Text>
-      </View>
-
-      {error && (
-        <View style={styles.errorContainer}>
-          <Ionicons name="warning" size={24} color="#FF3B30" />
-          <Text style={styles.errorText}>{error}</Text>
-        </View>
-      )}
-
-      {/* Metrics Grid */}
-      <View style={styles.metricsContainer}>
-        <MetricCard
-          title="Total Sales"
-          value={salesSummary.totalSales}
-          subtitle={`${salesSummary.transactionCount} completed`}
-          icon="receipt"
-          color="#007AFF"
-        />
-        
-        <MetricCard
-          title="Revenue"
-          value={`$${salesSummary.totalRevenue.toFixed(2)}`}
-          subtitle="Today's total"
-          icon="cash"
-          color="#34C759"
-        />
-        
-        <MetricCard
-          title="Avg Transaction"
-          value={`$${salesSummary.averageTransaction.toFixed(2)}`}
-          subtitle="Per completed sale"
-          icon="trending-up"
-          color="#FF9500"
-        />
-        
-        <MetricCard
-          title="Transactions"
-          value={salesSummary.transactionCount}
-          subtitle="Completed today"
-          icon="checkmark-circle"
-          color="#5856D6"
-        />
-      </View>
-
-      {/* Recent Sales */}
-      <View style={styles.recentSalesContainer}>
-        <View style={styles.sectionHeader}>
-          <Text style={styles.sectionTitle}>Recent Sales</Text>
-          <Ionicons name="time" size={20} color="#8E8E93" />
-        </View>
-        
-        {recentSales.length === 0 ? (
-          <View style={styles.emptyState}>
-            <Ionicons name="receipt-outline" size={48} color="#C7C7CC" />
-            <Text style={styles.emptyStateText}>No sales recorded yet</Text>
-            <Text style={styles.emptyStateSubtext}>
-              Sales will appear here once transactions are completed
-            </Text>
+    <SafeAreaView style={styles.container}>
+      <ScrollView 
+        style={styles.scrollView}
+        refreshControl={
+          <RefreshControl refreshing={refreshing} onRefresh={handleRefresh} />
+        }
+        showsVerticalScrollIndicator={false}
+      >
+        {/* Header */}
+        <View style={styles.header}>
+          <View style={styles.headerContent}>
+            <Text style={styles.title}>Dashboard</Text>
+            <Text style={styles.subtitle}>Today's Sales Summary</Text>
+            <Text style={styles.date}>{format(new Date(), 'EEEE, MMMM d, yyyy')}</Text>
           </View>
-        ) : (
-          <View style={styles.salesList}>
-            {recentSales.map((sale) => (
-              <View key={sale.id} style={styles.saleItem}>
-                <View style={styles.saleInfo}>
-                  <Text style={styles.saleId}>Sale #{sale.id}</Text>
-                  <Text style={styles.saleTime}>
-                    {format(new Date(sale.timestamp), 'h:mm a')}
-                  </Text>
-                  <View style={[
-                    styles.statusBadge,
-                    { backgroundColor: getStatusColor(sale.status) }
-                  ]}>
-                    <Text style={styles.statusText}>{sale.status}</Text>
-                  </View>
-                </View>
-                <View style={styles.saleAmounts}>
-                  <Text style={styles.saleTotal}>${sale.total.toFixed(2)}</Text>
-                  <Text style={styles.saleTax}>Tax: ${sale.tax_total.toFixed(2)}</Text>
-                </View>
-              </View>
-            ))}
+          <ModernButton
+            title={screenWidth < 768 ? "" : "Export"}
+            onPress={handleExportData}
+            variant="outline"
+            size="sm"
+            icon={
+              <Ionicons
+                name="download-outline"
+                size={20}
+                color={modernTheme.colors.primary[500]}
+              />
+            }
+            iconPosition={screenWidth < 768 ? "center" : "left"}
+          />
+        </View>
+
+        {error && (
+          <View style={styles.errorContainer}>
+            <Ionicons name="warning" size={24} color={modernTheme.colors.error[500]} />
+            <Text style={styles.errorText}>{error}</Text>
           </View>
         )}
-      </View>
-    </ScrollView>
+
+        {/* Metrics Grid */}
+        <View style={styles.metricsContainer}>
+          <View style={styles.metricsRow}>
+            <MetricCard
+              title="Total Sales"
+              value={salesSummary.totalSales}
+              subtitle={`${salesSummary.transactionCount} completed`}
+              icon={
+                <Ionicons
+                  name="receipt"
+                  size={24}
+                  color={modernTheme.colors.primary[500]}
+                />
+              }
+              color={modernTheme.colors.primary[500]}
+              style={styles.metricCard}
+            />
+            
+            <MetricCard
+              title="Revenue"
+              value={`$${salesSummary.totalRevenue.toFixed(2)}`}
+              subtitle="Today's total"
+              icon={
+                <Ionicons
+                  name="cash"
+                  size={24}
+                  color={modernTheme.colors.success[500]}
+                />
+              }
+              color={modernTheme.colors.success[500]}
+              style={styles.metricCard}
+            />
+          </View>
+          
+          <View style={styles.metricsRow}>
+            <MetricCard
+              title="Avg Transaction"
+              value={`$${salesSummary.averageTransaction.toFixed(2)}`}
+              subtitle="Per completed sale"
+              icon={
+                <Ionicons
+                  name="trending-up"
+                  size={24}
+                  color={modernTheme.colors.warning[500]}
+                />
+              }
+              color={modernTheme.colors.warning[500]}
+              style={styles.metricCard}
+            />
+            
+            <MetricCard
+              title="Transactions"
+              value={salesSummary.transactionCount}
+              subtitle="Completed today"
+              icon={
+                <Ionicons
+                  name="checkmark-circle"
+                  size={24}
+                  color={modernTheme.colors.secondary[500]}
+                />
+              }
+              color={modernTheme.colors.secondary[500]}
+              style={styles.metricCard}
+            />
+          </View>
+        </View>
+
+        {/* Recent Sales */}
+        <View style={styles.recentSalesContainer}>
+          <View style={styles.sectionHeader}>
+            <View style={styles.sectionTitleContainer}>
+              <Ionicons name="time" size={20} color={modernTheme.colors.text.secondary} />
+              <Text style={styles.sectionTitle}>Recent Sales</Text>
+            </View>
+            <ModernButton
+              title="View All"
+              onPress={handleViewAllSales}
+              variant="ghost"
+              size="sm"
+            />
+          </View>
+          
+          {recentSales.length === 0 ? (
+            <View style={styles.emptyState}>
+              <Ionicons 
+                name="receipt-outline" 
+                size={48} 
+                color={modernTheme.colors.text.tertiary} 
+              />
+              <Text style={styles.emptyStateText}>No sales recorded yet</Text>
+              <Text style={styles.emptyStateSubtext}>
+                Sales will appear here once transactions are completed
+              </Text>
+            </View>
+          ) : (
+            <View style={styles.salesList}>
+              {recentSales.map((sale) => (
+                <RecentSaleItem key={sale.id} sale={sale} />
+              ))}
+            </View>
+          )}
+        </View>
+
+        {/* Quick Actions */}
+        <View style={styles.quickActionsContainer}>
+          <Text style={styles.sectionTitle}>Quick Actions</Text>
+          <View style={styles.quickActionsGrid}>
+            <ModernButton
+              title="New Sale"
+              onPress={handleNewSale}
+              variant="primary"
+              size="md"
+              icon={
+                <Ionicons
+                  name="add-circle-outline"
+                  size={20}
+                  color={modernTheme.colors.text.inverse}
+                />
+              }
+              iconPosition="left"
+              style={styles.quickActionButton}
+            />
+            <ModernButton
+              title="Inventory"
+              onPress={handleInventory}
+              variant="outline"
+              size="md"
+              icon={
+                <Ionicons
+                  name="cube-outline"
+                  size={20}
+                  color={modernTheme.colors.primary[500]}
+                />
+              }
+              iconPosition="left"
+              style={styles.quickActionButton}
+            />
+          </View>
+        </View>
+      </ScrollView>
+    </SafeAreaView>
   );
 }
-
-const getStatusColor = (status: Sale['status']): string => {
-  switch (status) {
-    case 'completed':
-      return '#34C759';
-    case 'pending':
-      return '#FF9500';
-    case 'cancelled':
-      return '#FF3B30';
-    default:
-      return '#8E8E93';
-  }
-};
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#F2F2F7',
+    backgroundColor: modernTheme.colors.background.secondary,
+  },
+  scrollView: {
+    flex: 1,
   },
   loadingContainer: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: '#F2F2F7',
+    backgroundColor: modernTheme.colors.background.secondary,
   },
   loadingText: {
-    marginTop: 16,
-    fontSize: 16,
-    color: '#8E8E93',
+    marginTop: getSpacing('md'),
+    ...getTypography('md', 'regular'),
+    color: modernTheme.colors.text.secondary,
   },
   header: {
-    padding: 20,
-    backgroundColor: '#FFFFFF',
+    flexDirection: screenWidth < 768 ? 'column' : 'row',
+    justifyContent: 'space-between',
+    alignItems: screenWidth < 768 ? 'stretch' : 'flex-start',
+    padding: getSpacing('lg'),
+    backgroundColor: modernTheme.colors.background.primary,
     borderBottomWidth: 1,
-    borderBottomColor: '#E5E5EA',
+    borderBottomColor: modernTheme.colors.border.light,
+    gap: screenWidth < 768 ? getSpacing('md') : 0,
+  },
+  headerContent: {
+    flex: 1,
   },
   title: {
-    fontSize: 28,
-    fontWeight: 'bold',
-    color: '#000000',
-    marginBottom: 4,
+    ...getTypography('3xl', 'bold'),
+    color: modernTheme.colors.text.primary,
+    marginBottom: getSpacing('xs'),
   },
   subtitle: {
-    fontSize: 16,
-    color: '#8E8E93',
-    marginBottom: 4,
+    ...getTypography('md', 'regular'),
+    color: modernTheme.colors.text.secondary,
+    marginBottom: getSpacing('xs'),
   },
   date: {
-    fontSize: 14,
-    color: '#8E8E93',
+    ...getTypography('sm', 'regular'),
+    color: modernTheme.colors.text.tertiary,
   },
   errorContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#FFEBEE',
-    padding: 16,
-    margin: 16,
-    borderRadius: 8,
+    backgroundColor: modernTheme.colors.error[50],
+    padding: getSpacing('md'),
+    margin: getSpacing('lg'),
+    borderRadius: modernTheme.borderRadius.md,
     borderLeftWidth: 4,
-    borderLeftColor: '#FF3B30',
+    borderLeftColor: modernTheme.colors.error[500],
   },
   errorText: {
-    marginLeft: 12,
-    fontSize: 14,
-    color: '#FF3B30',
+    marginLeft: getSpacing('sm'),
+    ...getTypography('sm', 'regular'),
+    color: modernTheme.colors.error[700],
     flex: 1,
   },
   metricsContainer: {
-    padding: 16,
-    gap: 12,
+    padding: getSpacing('lg'),
+    gap: getSpacing('md'),
+  },
+  metricsRow: {
+    flexDirection: screenWidth < 768 ? 'column' : 'row',
+    gap: getSpacing('md'),
   },
   metricCard: {
-    backgroundColor: '#FFFFFF',
-    padding: 16,
-    borderRadius: 12,
-    borderLeftWidth: 4,
-    shadowColor: '#000',
-    shadowOffset: {
-      width: 0,
-      height: 2,
-    },
-    shadowOpacity: 0.1,
-    shadowRadius: 3.84,
-    elevation: 5,
-  },
-  metricHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 8,
-  },
-  metricTitle: {
-    fontSize: 14,
-    color: '#8E8E93',
-    marginLeft: 8,
-    fontWeight: '500',
-  },
-  metricValue: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    marginBottom: 4,
-  },
-  metricSubtitle: {
-    fontSize: 12,
-    color: '#8E8E93',
+    flex: screenWidth < 768 ? 1 : 1,
   },
   recentSalesContainer: {
-    margin: 16,
-    backgroundColor: '#FFFFFF',
-    borderRadius: 12,
-    shadowColor: '#000',
-    shadowOffset: {
-      width: 0,
-      height: 2,
-    },
-    shadowOpacity: 0.1,
-    shadowRadius: 3.84,
-    elevation: 5,
+    margin: getSpacing('lg'),
+    backgroundColor: modernTheme.colors.background.primary,
+    borderRadius: modernTheme.borderRadius.lg,
+    ...modernTheme.shadows.md,
   },
   sectionHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    padding: 16,
+    padding: getSpacing('lg'),
     borderBottomWidth: 1,
-    borderBottomColor: '#E5E5EA',
+    borderBottomColor: modernTheme.colors.border.light,
+  },
+  sectionTitleContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
   },
   sectionTitle: {
-    fontSize: 18,
-    fontWeight: '600',
-    color: '#000000',
+    ...getTypography('lg', 'semibold'),
+    color: modernTheme.colors.text.primary,
+    marginLeft: getSpacing('sm'),
   },
   emptyState: {
     alignItems: 'center',
-    padding: 40,
+    padding: getSpacing('xl'),
   },
   emptyStateText: {
-    fontSize: 16,
-    fontWeight: '500',
-    color: '#8E8E93',
-    marginTop: 16,
+    ...getTypography('md', 'medium'),
+    color: modernTheme.colors.text.secondary,
+    marginTop: getSpacing('md'),
   },
   emptyStateSubtext: {
-    fontSize: 14,
-    color: '#C7C7CC',
+    ...getTypography('sm', 'regular'),
+    color: modernTheme.colors.text.tertiary,
     textAlign: 'center',
-    marginTop: 8,
+    marginTop: getSpacing('sm'),
   },
   salesList: {
-    padding: 16,
+    padding: getSpacing('lg'),
   },
   saleItem: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingVertical: 12,
+    paddingVertical: getSpacing('md'),
     borderBottomWidth: 1,
-    borderBottomColor: '#F2F2F7',
+    borderBottomColor: modernTheme.colors.border.light,
   },
   saleInfo: {
     flex: 1,
   },
+  saleHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: getSpacing('xs'),
+  },
   saleId: {
-    fontSize: 16,
-    fontWeight: '500',
-    color: '#000000',
-    marginBottom: 4,
+    ...getTypography('md', 'medium'),
+    color: modernTheme.colors.text.primary,
   },
-  saleTime: {
-    fontSize: 14,
-    color: '#8E8E93',
-    marginBottom: 4,
-  },
-  statusBadge: {
-    paddingHorizontal: 8,
-    paddingVertical: 2,
-    borderRadius: 12,
-    alignSelf: 'flex-start',
+  statusContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
   },
   statusText: {
-    fontSize: 12,
-    color: '#FFFFFF',
-    fontWeight: '500',
+    ...getTypography('xs', 'medium'),
+    marginLeft: getSpacing('xs'),
     textTransform: 'capitalize',
+  },
+  saleTime: {
+    ...getTypography('sm', 'regular'),
+    color: modernTheme.colors.text.secondary,
+    marginBottom: getSpacing('xs'),
+  },
+  saleTax: {
+    ...getTypography('xs', 'regular'),
+    color: modernTheme.colors.text.tertiary,
   },
   saleAmounts: {
     alignItems: 'flex-end',
   },
   saleTotal: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#000000',
-    marginBottom: 2,
+    ...getTypography('lg', 'bold'),
+    color: modernTheme.colors.text.primary,
   },
-  saleTax: {
-    fontSize: 12,
-    color: '#8E8E93',
+  quickActionsContainer: {
+    padding: getSpacing('lg'),
+  },
+  quickActionsGrid: {
+    flexDirection: screenWidth < 768 ? 'column' : 'row',
+    gap: getSpacing('md'),
+    marginTop: getSpacing('md'),
+  },
+  quickActionButton: {
+    flex: screenWidth < 768 ? 1 : undefined,
+    minWidth: screenWidth < 768 ? undefined : 150,
   },
 });

@@ -1,4 +1,5 @@
-import { storageService } from './StorageService';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { database } from '../stores/DatabaseFactory';
 import {
   User,
   UserRole,
@@ -8,27 +9,20 @@ import {
   CreateUserInput,
   UpdateUserInput,
   AuditLog,
-  ROLE_PERMISSIONS
-} from '../types/auth';
+  ROLE_PERMISSIONS,
+  UserProfile
+} from '../types';
 
 class AuthService {
   private static instance: AuthService;
   private currentSession: AuthSession | null = null;
-  
-  // Storage keys
-  private readonly SESSION_KEY = '@salesmvp_session';
-  private readonly USERS_KEY = '@salesmvp_users';
-  private readonly AUDIT_KEY = '@salesmvp_audit_logs';
+  private readonly SESSION_TOKEN_KEY = 'auth_session_token';
 
   static getInstance(): AuthService {
     if (!AuthService.instance) {
       AuthService.instance = new AuthService();
     }
     return AuthService.instance;
-  }
-
-  private constructor() {
-    this.initializeDefaultAdmin();
   }
 
   // Initialize default admin user
@@ -65,10 +59,8 @@ class AuthService {
     try {
       await this.logAudit('auth', 'login_attempt', { username: credentials.username });
 
-      const users = await this.getAllUsers();
-      const user = users.find(u => u.username === credentials.username && u.isActive);
-
-      if (!user) {
+      const user = await database.getUserByUsername(credentials.username);
+      if (!user || !user.isActive) {
         throw new Error('Invalid username or password');
       }
 
@@ -83,8 +75,7 @@ class AuthService {
       }
 
       // Update last login
-      user.lastLogin = new Date();
-      await this.updateUser({ ...user, lastLogin: user.lastLogin });
+      await database.updateUser({ ...user, lastLogin: new Date() });
 
       // Create session
       const session: AuthSession = {
@@ -96,6 +87,9 @@ class AuthService {
 
       await this.saveSession(session);
       this.currentSession = session;
+
+      // Ensure user profile exists
+      await this.ensureUserProfile(user.id);
 
       await this.logAudit('auth', 'login_success', { 
         userId: user.id, 
@@ -111,12 +105,15 @@ class AuthService {
   async logout(): Promise<void> {
     try {
       if (this.currentSession) {
+        await database.deleteAuthSession(this.currentSession.token);
         await this.logAudit('auth', 'logout', { 
-          userId: this.currentSession.user.id 
+          userId: this.currentSession.user.id, 
+          username: this.currentSession.user.username 
         });
       }
-
-      await storageService.removeItem(this.SESSION_KEY);
+      
+      // Clear the stored session token
+      await AsyncStorage.removeItem(this.SESSION_TOKEN_KEY);
       this.currentSession = null;
     } catch (error) {
       console.error('Logout error:', error);
@@ -136,25 +133,25 @@ class AuthService {
         }
       }
 
-      // Try to restore from storage
-      const sessionData = await storageService.getItem(this.SESSION_KEY);
-      if (sessionData) {
-        const session: AuthSession = JSON.parse(sessionData);
-        
-        // Convert date strings back to Date objects
-        session.expiresAt = new Date(session.expiresAt);
-        session.user.createdAt = new Date(session.user.createdAt);
-        session.user.updatedAt = new Date(session.user.updatedAt);
-        if (session.user.lastLogin) {
-          session.user.lastLogin = new Date(session.user.lastLogin);
-        }
-
-        if (new Date() < session.expiresAt) {
-          this.currentSession = session;
-          return session;
+      // Try to restore from AsyncStorage first
+      const storedToken = await AsyncStorage.getItem(this.SESSION_TOKEN_KEY);
+      if (storedToken) {
+        // Try to restore from database using stored token
+        const sessionData = await database.getAuthSession(storedToken);
+        if (sessionData && new Date() < sessionData.expiresAt) {
+          const user = await database.getUser(sessionData.userId);
+          if (user) {
+            this.currentSession = {
+              user,
+              token: sessionData.token,
+              expiresAt: sessionData.expiresAt,
+              permissions: ROLE_PERMISSIONS[user.role]
+            };
+            return this.currentSession;
+          }
         } else {
-          await this.logout();
-          return null;
+          // Session is invalid, clear stored token
+          await AsyncStorage.removeItem(this.SESSION_TOKEN_KEY);
         }
       }
 
@@ -165,34 +162,25 @@ class AuthService {
     }
   }
 
+  async getCurrentUser(): Promise<User | null> {
+    const session = await this.getCurrentSession();
+    return session ? session.user : null;
+  }
+
   // User management methods
   async createUser(input: CreateUserInput, password: string): Promise<User> {
     try {
-      const users = await this.getAllUsers();
-      
       // Check for duplicate username/email
-      const existingUser = users.find(u => 
-        u.username === input.username || u.email === input.email
-      );
+      const existingUser = await database.getUserByUsername(input.username);
       if (existingUser) {
         throw new Error('Username or email already exists');
       }
 
-      const user: User = {
-        id: `user-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
-        username: input.username,
-        email: input.email,
-        firstName: input.firstName,
-        lastName: input.lastName,
-        role: input.role,
-        isActive: true,
-        createdAt: new Date(),
-        updatedAt: new Date()
-      };
-
-      users.push(user);
-      await this.saveUsers(users);
+      const user = await database.createUser(input);
       await this.savePassword(user.id, password);
+
+      // Ensure user profile exists
+      await this.ensureUserProfile(user.id);
 
       await this.logAudit('user_management', 'user_created', {
         newUserId: user.id,
@@ -207,90 +195,58 @@ class AuthService {
   }
 
   private async createUserWithPassword(user: User, password: string): Promise<void> {
-    const users = await this.getAllUsers();
-    users.push(user);
-    await this.saveUsers(users);
+    await database.createUser({
+      username: user.username,
+      email: user.email,
+      firstName: user.firstName,
+      lastName: user.lastName,
+      role: user.role
+    });
     await this.savePassword(user.id, password);
   }
 
   async updateUser(input: UpdateUserInput): Promise<User> {
     try {
-      const users = await this.getAllUsers();
-      const userIndex = users.findIndex(u => u.id === input.id);
-      
-      if (userIndex === -1) {
-        throw new Error('User not found');
-      }
-
-      const updatedUser = {
-        ...users[userIndex],
-        ...input,
-        updatedAt: new Date()
-      };
-
-      users[userIndex] = updatedUser;
-      await this.saveUsers(users);
-
+      const updatedUser = await database.updateUser(input);
       await this.logAudit('user_management', 'user_updated', {
         userId: input.id,
-        changes: input
+        updates: input
       });
-
       return updatedUser;
     } catch (error) {
-      throw error;
+      console.error('Failed to update user:', error);
+      throw new Error('Failed to update user');
     }
   }
 
   async getAllUsers(): Promise<User[]> {
     try {
-      const usersData = await storageService.getItem(this.USERS_KEY);
-      if (!usersData) return [];
-
-      const users = JSON.parse(usersData);
-      return users.map((user: any) => ({
-        ...user,
-        createdAt: new Date(user.createdAt),
-        updatedAt: new Date(user.updatedAt),
-        lastLogin: user.lastLogin ? new Date(user.lastLogin) : undefined
-      }));
+      return await database.getAllUsers();
     } catch (error) {
-      console.error('Get all users error:', error);
-      return [];
+      console.error('Failed to get all users:', error);
+      throw new Error('Failed to load users');
     }
   }
 
-  async deleteUser(userId: string): Promise<boolean> {
+  async getUser(id: string): Promise<User | null> {
     try {
-      // Cannot delete the last admin user
-      const users = await this.getAllUsers();
-      const user = users.find(u => u.id === userId);
-      
-      if (!user) {
-        throw new Error('User not found');
-      }
-
-      if (user.role === 'admin') {
-        const adminCount = users.filter(u => u.role === 'admin' && u.isActive).length;
-        if (adminCount <= 1) {
-          throw new Error('Cannot delete the last admin user');
-        }
-      }
-
-      const filteredUsers = users.filter(u => u.id !== userId);
-      await this.saveUsers(filteredUsers);
-
-      // Remove stored password
-      await storageService.removeItem(`@password_${userId}`);
-
-      await this.logAudit('user_management', 'user_deleted', {
-        deletedUserId: userId,
-        username: user.username
-      });
-
-      return true;
+      return await database.getUser(id);
     } catch (error) {
-      throw error;
+      console.error('Failed to get user:', error);
+      throw new Error('Failed to load user');
+    }
+  }
+
+  async deleteUser(id: string): Promise<boolean> {
+    try {
+      const success = await database.deleteUser(id);
+      if (success) {
+        await this.logAudit('user_management', 'user_deleted', { userId: id });
+      }
+      return success;
+    } catch (error) {
+      console.error('Failed to delete user:', error);
+      throw new Error('Failed to delete user');
     }
   }
 
@@ -314,41 +270,19 @@ class AuthService {
   }
 
   // Audit logging
-  private async logAudit(action: string, resource: string, details?: any): Promise<void> {
+  private async logAudit(resource: string, action: string, details?: any): Promise<void> {
     try {
-      const auditLog: AuditLog = {
-        id: `audit-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
-        userId: this.currentSession?.user?.id || 'system',
-        action,
-        resource,
-        details,
-        timestamp: new Date()
-      };
-
-      const logs = await this.getAuditLogs();
-      logs.push(auditLog);
-
-      // Keep only last 1000 logs
-      if (logs.length > 1000) {
-        logs.splice(0, logs.length - 1000);
-      }
-
-      await storageService.setItem(this.AUDIT_KEY, JSON.stringify(logs));
+      const userId = this.currentSession?.user.id || null;
+      await database.logAuditEvent(userId, action, resource, details);
     } catch (error) {
-      console.error('Audit log error:', error);
+      console.error('Failed to log audit event:', error);
+      // Don't throw error for audit logging failures
     }
   }
 
   async getAuditLogs(): Promise<AuditLog[]> {
     try {
-      const logsData = await storageService.getItem(this.AUDIT_KEY);
-      if (!logsData) return [];
-
-      const logs = JSON.parse(logsData);
-      return logs.map((log: any) => ({
-        ...log,
-        timestamp: new Date(log.timestamp)
-      }));
+      return await database.getAuditLogs();
     } catch (error) {
       console.error('Get audit logs error:', error);
       return [];
@@ -357,7 +291,7 @@ class AuthService {
 
   // Permission checking
   hasPermission(permission: keyof UserPermissions): boolean {
-    if (!this.currentSession) return false;
+    if (!this.currentSession) {return false;}
     return this.currentSession.permissions[permission] || false;
   }
 
@@ -369,25 +303,89 @@ class AuthService {
 
   // Private helper methods
   private generateSessionToken(): string {
-    return `sess_${Date.now()}_${Math.random().toString(36).substr(2, 16)}`;
+    return `token-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
   }
 
   private async saveSession(session: AuthSession): Promise<void> {
-    await storageService.setItem(this.SESSION_KEY, JSON.stringify(session));
-  }
-
-  private async saveUsers(users: User[]): Promise<void> {
-    await storageService.setItem(this.USERS_KEY, JSON.stringify(users));
+    try {
+      const sessionId = `session-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+      await database.saveAuthSession(sessionId, session.user.id, session.token, session.expiresAt);
+      
+      // Also store the token in AsyncStorage for persistence
+      await AsyncStorage.setItem(this.SESSION_TOKEN_KEY, session.token);
+    } catch (error) {
+      console.error('Failed to save session:', error);
+      throw new Error('Failed to save session');
+    }
   }
 
   private async savePassword(userId: string, password: string): Promise<void> {
-    // In production, hash the password with bcrypt or similar
-    await storageService.setItem(`@password_${userId}`, password);
+    try {
+      // In production, use proper password hashing (bcrypt, etc.)
+      const passwordHash = password; // For now, store plain text (NOT for production!)
+      const salt = 'default-salt'; // In production, generate unique salt
+      
+      await database.saveUserPassword(userId, passwordHash, salt);
+    } catch (error) {
+      console.error('Failed to save password:', error);
+      throw new Error('Failed to save password');
+    }
   }
 
-  private async getStoredPassword(userId: string): Promise<string | null> {
-    return await storageService.getItem(`@password_${userId}`);
+  private async getStoredPassword(userId: string): Promise<string> {
+    try {
+      const passwordData = await database.getUserPassword(userId);
+      if (!passwordData) {
+        throw new Error('Password not found');
+      }
+      return passwordData.passwordHash; // In production, verify hash
+    } catch (error) {
+      console.error('Failed to get stored password:', error);
+      throw new Error('Failed to retrieve password');
+    }
+  }
+
+  // Initialize the service
+  async initialize(): Promise<void> {
+    try {
+      await this.initializeDefaultAdmin();
+      console.log('✅ AuthService initialized successfully');
+    } catch (error) {
+      console.error('Failed to initialize AuthService:', error);
+      throw error;
+    }
+  }
+
+  // Ensure user profile exists
+  private async ensureUserProfile(userId: string): Promise<void> {
+    try {
+      const existingProfile = await database.getUserProfile(userId);
+      if (!existingProfile) {
+        // Create default user profile
+        const defaultProfile: UserProfile = {
+          id: `profile-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+          userId,
+          avatar: undefined,
+          phoneNumber: undefined,
+          address: undefined,
+          preferences: {
+            theme: 'auto',
+            notifications: true,
+            language: 'en'
+          },
+          createdAt: new Date(),
+          updatedAt: new Date()
+        };
+        
+        await database.saveUserProfile(defaultProfile);
+        console.log(`✅ Created default profile for user ${userId}`);
+      }
+    } catch (error) {
+      console.error('Failed to ensure user profile:', error);
+      // Don't throw error for profile creation failures
+    }
   }
 }
 
+// Export singleton instance
 export const authService = AuthService.getInstance();

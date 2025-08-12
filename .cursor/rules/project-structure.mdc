@@ -1,0 +1,64 @@
+# SalesMVP Project Structure Guide
+
+## Overview
+SalesMVP is a modern mobile point-of-sale (POS) application built with Expo SDK 51, TypeScript, and Expo Router. The project follows a clean architecture with clear separation of concerns.
+
+## Key Entry Points
+- [app/_layout.tsx](mdc:app/_layout.tsx) - Main app layout with Expo Router
+- [app/(tabs)/_layout.tsx](mdc:app/(tabs)/_layout.tsx) - Tab navigation configuration
+- [app/(tabs)/pos.tsx](mdc:app/(tabs)/pos.tsx) - Point of Sale interface
+- [app/(tabs)/dashboard.tsx](mdc:app/(tabs)/dashboard.tsx) - Sales dashboard
+- [app/(tabs)/inventory.tsx](mdc:app/(tabs)/inventory.tsx) - Inventory management
+
+## Source Code Organization (`src/`)
+
+### Core Directories
+- **components/** - Reusable UI components
+  - [AnalyticsDashboard.tsx](mdc:src/components/AnalyticsDashboard.tsx) - Analytics visualization
+  - [BarcodeScanner.tsx](mdc:src/components/BarcodeScanner.tsx) - Camera-based scanning
+  - [ModernPOSInterface.tsx](mdc:src/components/ModernPOSInterface.tsx) - Main POS UI
+  - [ui/](mdc:src/components/ui/) - Base UI components (Button, Card, Input)
+
+- **screens/** - Screen-specific components organized by feature
+  - [pos/](mdc:src/screens/pos/) - POS-related screens
+  - [dashboard/](mdc:src/screens/dashboard/) - Dashboard screens
+  - [inventory/](mdc:src/screens/inventory/) - Inventory management
+  - [reports/](mdc:src/screens/reports/) - Analytics and reporting
+  - [auth/](mdc:src/screens/auth/) - Authentication screens
+
+- **services/** - Business logic and external integrations
+  - [ProductService.ts](mdc:src/services/ProductService.ts) - Product management
+  - [SalesService.ts](mdc:src/services/SalesService.ts) - Sales operations
+  - [AnalyticsService.ts](mdc:src/services/AnalyticsService.ts) - Analytics data
+  - [AuthService.ts](mdc:src/services/AuthService.ts) - Authentication
+
+- **stores/** - State management and database
+  - [Database.ts](mdc:src/stores/Database.ts) - SQLite database operations
+  - [DatabaseFactory.ts](mdc:src/stores/DatabaseFactory.ts) - Database initialization
+
+- **types/** - TypeScript type definitions
+  - [index.ts](mdc:src/types/index.ts) - Core entity interfaces
+  - [pos.ts](mdc:src/types/pos.ts) - POS-specific types
+  - [inventory.ts](mdc:src/types/inventory.ts) - Inventory types
+  - [Analytics.ts](mdc:src/types/Analytics.ts) - Analytics types
+
+- **contexts/** - React Context providers
+  - [AuthContext.tsx](mdc:src/contexts/AuthContext.tsx) - Authentication state
+  - [DemoAuthContext.tsx](mdc:src/contexts/DemoAuthContext.tsx) - Demo mode
+
+## Configuration Files
+- [package.json](mdc:package.json) - Dependencies and scripts
+- [app.json](mdc:app.json) - Expo configuration
+- [tsconfig.json](mdc:tsconfig.json) - TypeScript configuration
+- [metro.config.js](mdc:metro.config.js) - Metro bundler config
+
+## Key Features
+- **Barcode Scanning**: Camera-based product identification
+- **Local Database**: SQLite for offline functionality
+- **Real-time Analytics**: Sales and inventory analytics
+- **Modern UI**: Responsive design with themed components
+- **Type Safety**: Full TypeScript coverage
+description:
+globs:
+alwaysApply: false
+---

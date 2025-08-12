@@ -10,7 +10,7 @@ import {
   KeyboardAvoidingView,
   Platform
 } from 'react-native';
-import { CartItem } from '../services/SimpleSalesService';
+import { CartItem } from '../types';
 
 interface PaymentProcessorProps {
   visible: boolean;

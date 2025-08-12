@@ -5,10 +5,10 @@ import {
   TextInput,
   TouchableOpacity,
   StyleSheet,
-  Alert,
   Modal,
   KeyboardAvoidingView,
-  Platform
+  Platform,
+  ScrollView,
 } from 'react-native';
 import { Product } from '../types';
 
@@ -64,7 +64,7 @@ export const ManualProductEntry: React.FC<ManualProductEntryProps> = ({
   };
 
   const handleAdd = () => {
-    if (!validateForm()) return;
+    if (!validateForm()) {return;}
 
     // Create a temporary product object for the cart
     // This won't be saved to the database, just used for the current transaction
@@ -75,7 +75,8 @@ export const ManualProductEntry: React.FC<ManualProductEntryProps> = ({
       price: parseFloat(price),
       cost: parseFloat(price) * 0.7, // Assume 30% profit margin
       stock_qty: parseInt(quantity),
-      tax_rate: parseFloat(taxRate)
+      tax_rate: parseFloat(taxRate),
+      category: 'Manual Entry'
     };
 
     onAddProduct(temporaryProduct);
@@ -86,6 +87,13 @@ export const ManualProductEntry: React.FC<ManualProductEntryProps> = ({
   const handleClose = () => {
     resetForm();
     onClose();
+  };
+
+  const calculateTotal = () => {
+    const priceNum = parseFloat(price) || 0;
+    const qtyNum = parseInt(quantity) || 1;
+    const taxNum = parseFloat(taxRate) || 0;
+    return (priceNum * qtyNum * (1 + taxNum)).toFixed(2);
   };
 
   return (
@@ -109,7 +117,7 @@ export const ManualProductEntry: React.FC<ManualProductEntryProps> = ({
           </TouchableOpacity>
         </View>
 
-        <View style={styles.content}>
+        <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
           <Text style={styles.subtitle}>
             Add a custom product to this sale only
           </Text>
@@ -182,11 +190,7 @@ export const ManualProductEntry: React.FC<ManualProductEntryProps> = ({
                 Quantity: {quantity}
               </Text>
               <Text style={styles.previewTotal}>
-                Total: ${(
-                  parseFloat(price || '0') * 
-                  parseInt(quantity || '1') * 
-                  (1 + parseFloat(taxRate || '0'))
-                ).toFixed(2)}
+                Total: ${calculateTotal()}
               </Text>
             </View>
           )}
@@ -196,7 +200,7 @@ export const ManualProductEntry: React.FC<ManualProductEntryProps> = ({
               ℹ️ Manual entries are for this sale only and won't be saved to your product catalog.
             </Text>
           </View>
-        </View>
+        </ScrollView>
       </KeyboardAvoidingView>
     </Modal>
   );

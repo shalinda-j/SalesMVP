@@ -1,41 +1,25 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
-
-// Simple interfaces matching our component usage
-export interface CartItem {
-  id: string;
-  name: string;
-  price: number;
-  quantity: number;
-  sku?: string;
-}
-
-export interface Sale {
-  id: string;
-  timestamp: Date;
-  items: CartItem[];
-  subtotal: number;
-  tax: number;
-  discount: number;
-  total: number;
-  paymentMethod: 'cash' | 'card' | 'digital';
-  amountPaid: number;
-  cashier?: string;
-  status: 'pending' | 'completed' | 'cancelled';
-}
+import {
+  RetailTransaction,
+  SaleLineItem,
+  TenderLineItem,
+  TransactionTotals,
+  CartItemInput,
+} from '../types';
 
 class SimpleSalesService {
   private readonly SALES_STORAGE_KEY = 'sales_';
 
   // Complete a sale and store it
   async completeSale(
-    cart: CartItem[],
+    cart: CartItemInput[],
     paymentMethod: 'cash' | 'card' | 'digital',
     amountPaid: number,
     subtotal: number,
     tax: number,
     discount: number = 0,
     cashier?: string
-  ): Promise<Sale> {
+  ): Promise<RetailTransaction> {
     if (cart.length === 0) {
       throw new Error('Cannot complete sale with empty cart');
     }
@@ -46,31 +30,67 @@ class SimpleSalesService {
       throw new Error(`Insufficient payment. Required: $${total.toFixed(2)}, Received: $${amountPaid.toFixed(2)}`);
     }
 
-    const sale: Sale = {
+    // Build standardized line items
+    const items: SaleLineItem[] = cart.map((c, idx) => {
+      const net = c.unitPrice * c.quantity;
+      const lineTax = 0; // tax per-line not tracked here
+      return {
+        id: `${idx + 1}`,
+        lineNumber: idx + 1,
+        productId: c.productId,
+        sku: c.sku,
+        description: c.description,
+        name: c.description || `Product ${c.productId}`, // Use description as name, or a default
+        quantity: c.quantity,
+        unitPrice: c.unitPrice,
+        price: c.unitPrice, // Map unitPrice to price
+        discounts: discount > 0 ? [{ id: 'header', type: 'amount', value: 0 }] : [],
+        taxes: [],
+        lineTotal: { net, tax: lineTax, gross: net + lineTax },
+      };
+    });
+
+    const tenders: TenderLineItem[] = [
+      {
+        id: '1',
+        type: paymentMethod,
+        amount: amountPaid,
+      },
+      // Change (if any) represented as negative tender amount
+      ...(amountPaid - total > 0
+        ? [{ id: 'change', type: 'cash' as const, amount: -(amountPaid - total) }]
+        : []),
+    ];
+
+    const totals: TransactionTotals = {
+      subTotal: subtotal,
+      discountTotal: discount,
+      taxTotal: tax,
+      grandTotal: total,
+      currency: 'USD',
+    };
+
+    const sale: RetailTransaction = {
       id: this.generateSaleId(),
-      timestamp: new Date(),
-      items: [...cart], // Clone the cart items
-      subtotal,
-      tax,
-      discount,
-      total,
-      paymentMethod,
-      amountPaid,
-      cashier,
-      status: 'completed'
+      businessDate: new Date().toISOString().slice(0, 10),
+      startTime: new Date().toISOString(),
+      endTime: new Date().toISOString(),
+      timestamp: new Date(), // Add this
+      status: 'completed',
+      operatorId: cashier,
+      items,
+      tenders,
+      totals,
     };
 
     try {
       // Store the sale
       await AsyncStorage.setItem(
         `${this.SALES_STORAGE_KEY}${sale.id}`,
-        JSON.stringify({
-          ...sale,
-          timestamp: sale.timestamp.toISOString() // Convert Date to string for storage
-        })
+        JSON.stringify(sale)
       );
 
-      console.log(`✅ Sale completed: ${sale.id} - $${sale.total.toFixed(2)} via ${paymentMethod}`);
+      console.log(`✅ Sale completed: ${sale.id} - $${sale.totals.grandTotal.toFixed(2)} via ${paymentMethod}`);
       return sale;
     } catch (error) {
       console.error('Failed to save sale:', error);
@@ -79,23 +99,22 @@ class SimpleSalesService {
   }
 
   // Get all sales (for analytics)
-  async getAllSales(): Promise<Sale[]> {
+  async getAllSales(): Promise<RetailTransaction[]> {
     try {
       const keys = await AsyncStorage.getAllKeys();
       const saleKeys = keys.filter(key => key.startsWith(this.SALES_STORAGE_KEY));
       
       const salesData = await AsyncStorage.multiGet(saleKeys);
-      const sales: Sale[] = [];
+      const sales: RetailTransaction[] = [];
       
       salesData.forEach(([key, value]) => {
         if (value) {
           const sale = JSON.parse(value);
-          sale.timestamp = new Date(sale.timestamp); // Convert back to Date object
           sales.push(sale);
         }
       });
       
-      return sales.sort((a, b) => b.timestamp.getTime() - a.timestamp.getTime());
+      return sales.sort((a, b) => new Date(b.endTime ?? b.startTime).getTime() - new Date(a.endTime ?? a.startTime).getTime());
     } catch (error) {
       console.error('Failed to get all sales:', error);
       throw new Error('Failed to retrieve sales data');
@@ -103,12 +122,12 @@ class SimpleSalesService {
   }
 
   // Get sales within a date range
-  async getSalesByDateRange(startDate: Date, endDate: Date): Promise<Sale[]> {
+  async getSalesByDateRange(startDate: Date, endDate: Date): Promise<RetailTransaction[]> {
     try {
       const allSales = await this.getAllSales();
       
       return allSales.filter(sale => {
-        const saleDate = new Date(sale.timestamp);
+        const saleDate = new Date(sale.endTime ?? sale.startTime);
         return saleDate >= startDate && saleDate <= endDate;
       });
     } catch (error) {
@@ -118,7 +137,7 @@ class SimpleSalesService {
   }
 
   // Get sales for a specific date (helper method)
-  async getSalesForDate(date: Date): Promise<Sale[]> {
+  async getSalesForDate(date: Date): Promise<RetailTransaction[]> {
     const startOfDay = new Date(date.getFullYear(), date.getMonth(), date.getDate());
     const endOfDay = new Date(date.getFullYear(), date.getMonth(), date.getDate(), 23, 59, 59);
     
@@ -126,19 +145,18 @@ class SimpleSalesService {
   }
 
   // Get today's sales
-  async getTodaysSales(): Promise<Sale[]> {
+  async getTodaysSales(): Promise<RetailTransaction[]> {
     return this.getSalesForDate(new Date());
   }
 
   // Get a specific sale by ID
-  async getSale(saleId: string): Promise<Sale | null> {
+  async getSale(saleId: string): Promise<RetailTransaction | null> {
     try {
       const saleData = await AsyncStorage.getItem(`${this.SALES_STORAGE_KEY}${saleId}`);
-      if (!saleData) return null;
+      if (!saleData) {return null;}
 
       const sale = JSON.parse(saleData);
-      sale.timestamp = new Date(sale.timestamp);
-      return sale;
+      return sale as RetailTransaction;
     } catch (error) {
       console.error('Failed to get sale:', error);
       return null;
@@ -164,14 +182,14 @@ class SimpleSalesService {
 
   // Calculate cart totals (helper method)
   calculateCartTotals(
-    cart: CartItem[],
+    cart: CartItemInput[],
     taxRate: number = 0.08
   ): {
     subtotal: number;
     tax: number;
     total: number;
   } {
-    const subtotal = cart.reduce((sum, item) => sum + (item.price * item.quantity), 0);
+    const subtotal = cart.reduce((sum, item) => sum + (item.unitPrice * item.quantity), 0);
     const tax = subtotal * taxRate;
     const total = subtotal + tax;
 
@@ -198,7 +216,7 @@ class SimpleSalesService {
     };
   }> {
     try {
-      let sales: Sale[];
+      let sales: RetailTransaction[];
       
       if (startDate && endDate) {
         sales = await this.getSalesByDateRange(startDate, endDate);
@@ -207,8 +225,8 @@ class SimpleSalesService {
       }
 
       const totalSales = sales.length;
-      const totalRevenue = sales.reduce((sum, sale) => sum + sale.total, 0);
-      const totalTax = sales.reduce((sum, sale) => sum + sale.tax, 0);
+      const totalRevenue = sales.reduce((sum, sale) => sum + sale.totals.grandTotal, 0);
+      const totalTax = sales.reduce((sum, sale) => sum + sale.totals.taxTotal, 0);
       const averageTransaction = totalSales > 0 ? totalRevenue / totalSales : 0;
 
       const paymentMethodBreakdown = {
@@ -218,8 +236,12 @@ class SimpleSalesService {
       };
 
       sales.forEach(sale => {
-        paymentMethodBreakdown[sale.paymentMethod].count++;
-        paymentMethodBreakdown[sale.paymentMethod].amount += sale.total;
+        sale.tenders.forEach(t => {
+          const type = (t.type === 'cash' || t.type === 'card' || t.type === 'digital') ? t.type : 'other';
+          if (type === 'other') {return;}
+          paymentMethodBreakdown[type].count++;
+          paymentMethodBreakdown[type].amount += Math.max(0, t.amount);
+        });
       });
 
       return {
@@ -250,7 +272,7 @@ class SimpleSalesService {
 
     for (let i = 0; i < numberOfSales; i++) {
       // Create random cart
-      const cart: CartItem[] = [];
+      const cart: CartItemInput[] = [];
       const numItems = Math.floor(Math.random() * 3) + 1; // 1-3 items per sale
 
       for (let j = 0; j < numItems; j++) {
@@ -258,11 +280,11 @@ class SimpleSalesService {
         const quantity = Math.floor(Math.random() * 3) + 1; // 1-3 quantity
 
         cart.push({
-          id: product.id,
-          name: product.name,
-          price: product.price,
+          productId: parseInt(product.id, 10),
+          description: product.name,
+          unitPrice: product.price,
           quantity,
-          sku: product.sku
+          sku: product.sku,
         });
       }
 
@@ -284,27 +306,36 @@ class SimpleSalesService {
         Math.floor(Math.random() * 60)
       );
 
-      const sale: Sale = {
+      const items: SaleLineItem[] = cart.map((c, idx) => ({
+        id: `${idx + 1}`,
+        lineNumber: idx + 1,
+        productId: c.productId,
+        sku: c.sku,
+        description: c.description,
+        name: c.description || `Product ${c.productId}`, // Use description as name, or a default
+        quantity: c.quantity,
+        unitPrice: c.unitPrice,
+        price: c.unitPrice, // Map unitPrice to price
+        lineTotal: { net: c.unitPrice * c.quantity, tax: 0, gross: c.unitPrice * c.quantity },
+      }));
+
+      const sale: RetailTransaction = {
         id: this.generateSaleId(),
-        timestamp: randomDate,
-        items: cart,
-        subtotal,
-        tax,
-        discount: 0,
-        total,
-        paymentMethod,
-        amountPaid,
-        cashier: 'Demo User',
-        status: 'completed'
+        businessDate: randomDate.toISOString().slice(0, 10),
+        startTime: randomDate.toISOString(),
+        endTime: randomDate.toISOString(),
+        timestamp: randomDate, // Add this
+        status: 'completed',
+        operatorId: 'Demo User',
+        items,
+        tenders: [{ id: '1', type: paymentMethod, amount: amountPaid }],
+        totals: { subTotal: subtotal, discountTotal: 0, taxTotal: tax, grandTotal: total, currency: 'USD' },
       };
 
       // Store the sale
       await AsyncStorage.setItem(
         `${this.SALES_STORAGE_KEY}${sale.id}`,
-        JSON.stringify({
-          ...sale,
-          timestamp: sale.timestamp.toISOString()
-        })
+        JSON.stringify(sale)
       );
     }
 

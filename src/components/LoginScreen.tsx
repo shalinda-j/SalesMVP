@@ -9,11 +9,18 @@ import {
   ScrollView,
   KeyboardAvoidingView,
   Platform,
+  Alert,
 } from 'react-native';
-import { useAuth } from '../contexts/DemoAuthContext';
-import { LoginCredentials } from '../types/auth';
+import { Ionicons } from '@expo/vector-icons';
+import { useAuth } from '../contexts/AuthContext';
+import { LoginCredentials } from '../types';
+import { theme } from '../styles/theme';
 
-export const LoginScreen: React.FC = () => {
+interface LoginScreenProps {
+  onRegisterPress: () => void;
+}
+
+export const LoginScreen: React.FC<LoginScreenProps> = ({ onRegisterPress }) => {
   const { login, isLoading, error, clearError } = useAuth();
   const [credentials, setCredentials] = useState<LoginCredentials>({
     username: '',
@@ -24,6 +31,7 @@ export const LoginScreen: React.FC = () => {
 
   const handleLogin = async () => {
     if (!credentials.username.trim() || !credentials.password.trim()) {
+      Alert.alert('Validation Error', 'Please enter both username and password');
       return;
     }
     
@@ -31,72 +39,73 @@ export const LoginScreen: React.FC = () => {
     await login(credentials);
   };
 
-  const handleDemoLogin = (role: 'admin' | 'manager' | 'cashier') => {
-    const demoCredentials = {
-      admin: { username: 'admin', password: 'admin123' },
-      manager: { username: 'manager', password: 'manager123' },
-      cashier: { username: 'cashier', password: 'cashier123' }
-    };
 
-    setCredentials(demoCredentials[role]);
+
+  const updateCredentials = (field: keyof LoginCredentials, value: string) => {
+    setCredentials(prev => ({ ...prev, [field]: value }));
+    if (error) {
+      clearError();
+    }
   };
 
   return (
-    <KeyboardAvoidingView
-      style={styles.container}
+    <KeyboardAvoidingView 
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      style={styles.container}
     >
-      <ScrollView contentContainerStyle={styles.scrollContainer}>
-        {/* Logo/Header Section */}
+      <ScrollView 
+        contentContainerStyle={styles.scrollContent}
+        showsVerticalScrollIndicator={false}
+      >
+        {/* Header */}
         <View style={styles.header}>
           <View style={styles.logoContainer}>
-            <Text style={styles.logoText}>🏪</Text>
+            <Ionicons name="business" size={48} color={theme.colors.primary} />
             <Text style={styles.appName}>SalesMVP</Text>
-            <Text style={styles.tagline}>Point of Sale System</Text>
+            <Text style={styles.tagline}>Point of Sale Management</Text>
           </View>
         </View>
 
         {/* Login Form */}
-        <View style={styles.formContainer}>
+        <View style={styles.form}>
           <Text style={styles.title}>Welcome Back</Text>
-          <Text style={styles.subtitle}>Sign in to continue</Text>
+          <Text style={styles.subtitle}>Sign in to your account</Text>
 
-          {/* Username Input */}
-          <View style={styles.inputContainer}>
+          {/* Username */}
+          <View style={styles.inputGroup}>
             <Text style={styles.label}>Username</Text>
             <TextInput
               style={styles.input}
               value={credentials.username}
-              onChangeText={(text) => setCredentials({ ...credentials, username: text })}
-              placeholder="Enter username"
+              onChangeText={(text) => updateCredentials('username', text)}
+              placeholder="Enter your username"
               autoCapitalize="none"
               autoCorrect={false}
-              editable={!isLoading}
+              autoFocus
             />
           </View>
 
-          {/* Password Input */}
-          <View style={styles.inputContainer}>
+          {/* Password */}
+          <View style={styles.inputGroup}>
             <Text style={styles.label}>Password</Text>
             <View style={styles.passwordContainer}>
               <TextInput
                 style={styles.passwordInput}
                 value={credentials.password}
-                onChangeText={(text) => setCredentials({ ...credentials, password: text })}
-                placeholder="Enter password"
+                onChangeText={(text) => updateCredentials('password', text)}
+                placeholder="Enter your password"
                 secureTextEntry={!showPassword}
                 autoCapitalize="none"
-                autoCorrect={false}
-                editable={!isLoading}
               />
               <TouchableOpacity
-                style={styles.showPasswordButton}
                 onPress={() => setShowPassword(!showPassword)}
-                disabled={isLoading}
+                style={styles.eyeButton}
               >
-                <Text style={styles.showPasswordText}>
-                  {showPassword ? '🙈' : '👁️'}
-                </Text>
+                <Ionicons
+                  name={showPassword ? 'eye-off' : 'eye'}
+                  size={20}
+                  color={theme.colors.textSecondary}
+                />
               </TouchableOpacity>
             </View>
           </View>
@@ -105,86 +114,51 @@ export const LoginScreen: React.FC = () => {
           <TouchableOpacity
             style={styles.rememberMeContainer}
             onPress={() => setRememberMe(!rememberMe)}
-            disabled={isLoading}
           >
-            <View style={[styles.checkbox, rememberMe && styles.checkboxActive]}>
-              {rememberMe && <Text style={styles.checkmark}>✓</Text>}
+            <View style={[styles.checkbox, rememberMe && styles.checkboxChecked]}>
+              {rememberMe && (
+                <Ionicons name="checkmark" size={16} color={theme.colors.surface} />
+              )}
             </View>
             <Text style={styles.rememberMeText}>Remember me</Text>
           </TouchableOpacity>
 
-          {/* Error Message */}
+          {/* Error Display */}
           {error && (
             <View style={styles.errorContainer}>
-              <Text style={styles.errorText}>⚠️ {error}</Text>
+              <Ionicons name="alert-circle" size={20} color={theme.colors.error} />
+              <Text style={styles.errorText}>{error}</Text>
             </View>
           )}
 
           {/* Login Button */}
           <TouchableOpacity
-            style={[
-              styles.loginButton,
-              isLoading && styles.loginButtonDisabled,
-              (!credentials.username.trim() || !credentials.password.trim()) && styles.loginButtonDisabled
-            ]}
+            style={[styles.loginButton, isLoading && styles.loginButtonDisabled]}
             onPress={handleLogin}
-            disabled={
-              isLoading ||
-              !credentials.username.trim() ||
-              !credentials.password.trim()
-            }
+            disabled={isLoading}
           >
             {isLoading ? (
-              <View style={styles.loadingContainer}>
-                <ActivityIndicator color="#fff" size="small" />
-                <Text style={styles.loginButtonText}>Signing in...</Text>
-              </View>
+              <ActivityIndicator color={theme.colors.surface} />
             ) : (
-              <Text style={styles.loginButtonText}>Sign In</Text>
+              <>
+                <Ionicons name="log-in" size={20} color={theme.colors.surface} />
+                <Text style={styles.loginButtonText}>Sign In</Text>
+              </>
             )}
           </TouchableOpacity>
 
-          {/* Demo Accounts Section */}
-          <View style={styles.demoSection}>
-            <Text style={styles.demoTitle}>🧪 Demo Accounts</Text>
-            <Text style={styles.demoSubtitle}>Click to auto-fill credentials:</Text>
-            
-            <View style={styles.demoButtonsContainer}>
-              <TouchableOpacity
-                style={[styles.demoButton, styles.adminDemo]}
-                onPress={() => handleDemoLogin('admin')}
-                disabled={isLoading}
-              >
-                <Text style={styles.demoButtonText}>👑 Admin</Text>
-                <Text style={styles.demoButtonSubtext}>Full Access</Text>
-              </TouchableOpacity>
 
-              <TouchableOpacity
-                style={[styles.demoButton, styles.managerDemo]}
-                onPress={() => handleDemoLogin('manager')}
-                disabled={isLoading}
-              >
-                <Text style={styles.demoButtonText}>👔 Manager</Text>
-                <Text style={styles.demoButtonSubtext}>Management</Text>
-              </TouchableOpacity>
 
-              <TouchableOpacity
-                style={[styles.demoButton, styles.cashierDemo]}
-                onPress={() => handleDemoLogin('cashier')}
-                disabled={isLoading}
-              >
-                <Text style={styles.demoButtonText}>🧑‍💼 Cashier</Text>
-                <Text style={styles.demoButtonSubtext}>POS Only</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-
-          {/* Footer */}
-          <View style={styles.footer}>
-            <Text style={styles.footerText}>
-              New to SalesMVP? Contact your administrator for account setup.
+          {/* Register Link */}
+          <TouchableOpacity
+            style={styles.registerLink}
+            onPress={onRegisterPress}
+            disabled={isLoading}
+          >
+            <Text style={styles.registerText}>
+              Don't have an account? <Text style={styles.registerTextBold}>Sign up</Text>
             </Text>
-          </View>
+          </TouchableOpacity>
         </View>
       </ScrollView>
     </KeyboardAvoidingView>
@@ -194,92 +168,81 @@ export const LoginScreen: React.FC = () => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#f8f9fa',
+    backgroundColor: theme.colors.background,
   },
-  scrollContainer: {
+  scrollContent: {
     flexGrow: 1,
-    justifyContent: 'center',
-    paddingHorizontal: 20,
-    paddingVertical: 40,
+    paddingBottom: 40,
   },
   header: {
     alignItems: 'center',
-    marginBottom: 40,
+    paddingTop: 60,
+    paddingBottom: 40,
   },
   logoContainer: {
     alignItems: 'center',
   },
-  logoText: {
-    fontSize: 64,
-    marginBottom: 10,
-  },
   appName: {
     fontSize: 32,
     fontWeight: 'bold',
-    color: '#2c3e50',
-    marginBottom: 5,
+    color: theme.colors.primary,
+    marginTop: 16,
   },
   tagline: {
     fontSize: 16,
-    color: '#7f8c8d',
+    color: theme.colors.textSecondary,
+    marginTop: 4,
   },
-  formContainer: {
-    backgroundColor: '#fff',
-    borderRadius: 20,
-    padding: 30,
-    borderWidth: 1,
-    borderColor: '#e9ecef',
+  form: {
+    padding: 20,
   },
   title: {
     fontSize: 28,
     fontWeight: 'bold',
-    color: '#2c3e50',
-    marginBottom: 8,
+    color: theme.colors.text,
     textAlign: 'center',
+    marginBottom: 8,
   },
   subtitle: {
     fontSize: 16,
-    color: '#7f8c8d',
-    marginBottom: 30,
+    color: theme.colors.textSecondary,
     textAlign: 'center',
+    marginBottom: 32,
   },
-  inputContainer: {
+  inputGroup: {
     marginBottom: 20,
   },
   label: {
     fontSize: 16,
     fontWeight: '600',
-    color: '#2c3e50',
+    color: theme.colors.text,
     marginBottom: 8,
   },
   input: {
-    backgroundColor: '#f8f9fa',
-    borderRadius: 12,
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    fontSize: 16,
     borderWidth: 1,
-    borderColor: '#e9ecef',
+    borderColor: theme.colors.border,
+    borderRadius: 8,
+    padding: 12,
+    fontSize: 16,
+    backgroundColor: theme.colors.surface,
+    color: theme.colors.text,
   },
   passwordContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#f8f9fa',
-    borderRadius: 12,
     borderWidth: 1,
-    borderColor: '#e9ecef',
+    borderColor: theme.colors.border,
+    borderRadius: 8,
+    backgroundColor: theme.colors.surface,
   },
   passwordInput: {
     flex: 1,
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    fontSize: 16,
-  },
-  showPasswordButton: {
     padding: 12,
+    fontSize: 16,
+    color: theme.colors.text,
   },
-  showPasswordText: {
-    fontSize: 18,
+  eyeButton: {
+    padding: 12,
   },
   rememberMeContainer: {
     flexDirection: 'row',
@@ -289,112 +252,64 @@ const styles = StyleSheet.create({
   checkbox: {
     width: 20,
     height: 20,
-    borderRadius: 4,
     borderWidth: 2,
-    borderColor: '#dee2e6',
-    marginRight: 10,
+    borderColor: theme.colors.border,
+    borderRadius: 4,
+    marginRight: 8,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  checkboxActive: {
-    backgroundColor: '#007bff',
-    borderColor: '#007bff',
-  },
-  checkmark: {
-    color: '#fff',
-    fontSize: 12,
-    fontWeight: 'bold',
+  checkboxChecked: {
+    backgroundColor: theme.colors.primary,
+    borderColor: theme.colors.primary,
   },
   rememberMeText: {
-    fontSize: 16,
-    color: '#6c757d',
+    fontSize: 14,
+    color: theme.colors.textSecondary,
   },
   errorContainer: {
-    backgroundColor: '#f8d7da',
-    borderRadius: 8,
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: theme.colors.error + '20',
     padding: 12,
+    borderRadius: 8,
     marginBottom: 20,
   },
   errorText: {
-    color: '#721c24',
+    color: theme.colors.error,
     fontSize: 14,
-    textAlign: 'center',
+    marginLeft: 8,
+    flex: 1,
   },
   loginButton: {
-    backgroundColor: '#007bff',
-    borderRadius: 12,
-    paddingVertical: 16,
-    alignItems: 'center',
-    marginBottom: 30,
-  },
-  loginButtonDisabled: {
-    backgroundColor: '#6c757d',
-    opacity: 0.6,
-  },
-  loadingContainer: {
+    backgroundColor: theme.colors.primary,
+    padding: 16,
+    borderRadius: 8,
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 24,
+  },
+  loginButtonDisabled: {
+    opacity: 0.6,
   },
   loginButtonText: {
-    color: '#fff',
-    fontSize: 18,
-    fontWeight: 'bold',
+    color: theme.colors.surface,
+    fontSize: 16,
+    fontWeight: '600',
     marginLeft: 8,
   },
-  demoSection: {
-    marginBottom: 30,
+
+  registerLink: {
+    alignItems: 'center',
+    padding: 12,
   },
-  demoTitle: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    color: '#2c3e50',
-    marginBottom: 5,
-    textAlign: 'center',
-  },
-  demoSubtitle: {
+  registerText: {
     fontSize: 14,
-    color: '#6c757d',
-    marginBottom: 20,
-    textAlign: 'center',
+    color: theme.colors.textSecondary,
   },
-  demoButtonsContainer: {
-    gap: 12,
-  },
-  demoButton: {
-    borderRadius: 12,
-    padding: 16,
-    alignItems: 'center',
-    borderWidth: 1,
-  },
-  adminDemo: {
-    backgroundColor: '#f8f9fa',
-    borderColor: '#dc3545',
-  },
-  managerDemo: {
-    backgroundColor: '#f8f9fa',
-    borderColor: '#fd7e14',
-  },
-  cashierDemo: {
-    backgroundColor: '#f8f9fa',
-    borderColor: '#198754',
-  },
-  demoButtonText: {
-    fontSize: 16,
-    fontWeight: 'bold',
-    color: '#2c3e50',
-    marginBottom: 2,
-  },
-  demoButtonSubtext: {
-    fontSize: 12,
-    color: '#6c757d',
-  },
-  footer: {
-    alignItems: 'center',
-  },
-  footerText: {
-    fontSize: 12,
-    color: '#6c757d',
-    textAlign: 'center',
-    lineHeight: 18,
+  registerTextBold: {
+    color: theme.colors.primary,
+    fontWeight: '600',
   },
 });

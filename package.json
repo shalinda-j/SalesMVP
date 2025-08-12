@@ -19,19 +19,16 @@
     "@expo/vector-icons": "^14.0.2",
     "@react-native-async-storage/async-storage": "2.1.2",
     "@react-native-community/netinfo": "11.4.1",
-    "@react-native-firebase/app": "^22.4.0",
-    "@react-native-firebase/auth": "^22.4.0",
-    "@react-native-firebase/firestore": "^22.4.0",
-    "@react-navigation/native": "^7.1.17",
-    "@stripe/stripe-terminal-react-native": "^0.0.1-beta.26",
+    "@react-navigation/native": "^7.1.6",
     "@types/uuid": "^10.0.0",
     "axios": "^1.11.0",
     "date-fns": "^4.1.0",
     "expo": "^53.0.20",
-    "expo-barcode-scanner": "^13.0.1",
-    "expo-camera": "~16.1.11",
+    "expo-camera": "^16.1.11",
     "expo-constants": "~17.1.7",
+    "expo-dev-client": "~5.2.4",
     "expo-font": "~13.3.2",
+    "expo-image-picker": "^16.1.4",
     "expo-linking": "~7.1.7",
     "expo-router": "^5.1.4",
     "expo-splash-screen": "~0.30.10",
@@ -70,11 +67,21 @@
     "typescript": "~5.8.3"
   },
   "resolutions": {
-    "@react-navigation/native": "^7.1.0",
+    "@react-navigation/native": "^7.1.6",
     "@react-navigation/core": "^7.0.0",
     "@react-navigation/routers": "^7.0.0",
     "@react-navigation/bottom-tabs": "^7.0.0",
     "@react-navigation/native-stack": "^7.0.0"
+  },
+  "expo": {
+    "doctor": {
+      "reactNativeDirectoryCheck": {
+        "listUnknownPackages": false,
+        "exclude": [
+          "expo-barcode-scanner"
+        ]
+      }
+    }
   },
   "private": true
 }

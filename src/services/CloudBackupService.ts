@@ -5,7 +5,7 @@ import {
   CloudRestoreInfo,
   CloudError
 } from '../types/Cloud';
-import { StorageService } from './StorageService';
+import { storageService } from './StorageService';
 import { productService } from './ProductService';
 import { salesService } from './SimpleSalesService';
 import { authService } from './AuthService';
@@ -14,7 +14,7 @@ class CloudBackupService implements ICloudBackupService {
   private static instance: CloudBackupService;
   private isInitialized = false;
   private config: CloudConfig | null = null;
-  private automaticBackupInterval?: NodeJS.Timeout;
+  private automaticBackupInterval?: ReturnType<typeof setInterval>;
   private backupInProgress = false;
 
   private constructor() {}
@@ -42,7 +42,7 @@ class CloudBackupService implements ICloudBackupService {
 
   private async loadAutomaticBackupSettings(): Promise<void> {
     try {
-      const settings = await StorageService.getItem('automatic_backup_settings');
+      const settings = await storageService.getItem('automatic_backup_settings');
       if (settings) {
         const { interval } = JSON.parse(settings);
         if (interval) {
@@ -160,7 +160,7 @@ class CloudBackupService implements ICloudBackupService {
       backupInfo.compressionRatio = originalSize > 0 ? (originalSize - compressedSize) / originalSize : 0;
 
       // Store backup locally (in real implementation, would upload to cloud)
-      await StorageService.setItem(`backup_${backupId}`, JSON.stringify({
+      await storageService.setItem(`backup_${backupId}`, JSON.stringify({
         info: backupInfo,
         data: backupData
       }));
@@ -185,7 +185,7 @@ class CloudBackupService implements ICloudBackupService {
     this.ensureInitialized();
 
     try {
-      const backupList = await StorageService.getItem('backup_list');
+      const backupList = await storageService.getItem('backup_list');
       if (!backupList) {
         return [];
       }
@@ -205,14 +205,14 @@ class CloudBackupService implements ICloudBackupService {
 
     try {
       // Remove backup data
-      await StorageService.removeItem(`backup_${backupId}`);
+      await storageService.removeItem(`backup_${backupId}`);
 
       // Update backup list
-      const backupList = await StorageService.getItem('backup_list');
+      const backupList = await storageService.getItem('backup_list');
       if (backupList) {
         const backups = JSON.parse(backupList) as CloudBackupInfo[];
         const updatedBackups = backups.filter(backup => backup.backupId !== backupId);
-        await StorageService.setItem('backup_list', JSON.stringify(updatedBackups));
+        await storageService.setItem('backup_list', JSON.stringify(updatedBackups));
       }
 
       console.log(`🗑️ Backup deleted: ${backupId}`);
@@ -248,7 +248,7 @@ class CloudBackupService implements ICloudBackupService {
 
     try {
       // Load backup data
-      const backupData = await StorageService.getItem(`backup_${backupId}`);
+      const backupData = await storageService.getItem(`backup_${backupId}`);
       if (!backupData) {
         throw new Error('Backup not found');
       }
@@ -292,7 +292,7 @@ class CloudBackupService implements ICloudBackupService {
         
         // Users restoration would require admin privileges
         const currentUser = await authService.getCurrentUser();
-        if (currentUser && authService.hasPermission(currentUser, 'canManageUsers')) {
+        if (currentUser && authService.hasPermission('canManageUsers')) {
           // Restore users logic would go here
           restoreInfo.entitiesRestored.users = data.data.users.length;
         } else {
@@ -323,7 +323,7 @@ class CloudBackupService implements ICloudBackupService {
     this.ensureInitialized();
 
     try {
-      const restoreStatus = await StorageService.getItem(`restore_${restoreId}`);
+      const restoreStatus = await storageService.getItem(`restore_${restoreId}`);
       if (!restoreStatus) {
         throw new Error('Restore operation not found');
       }
@@ -355,7 +355,7 @@ class CloudBackupService implements ICloudBackupService {
     }, intervalMs);
 
     // Save settings
-    await StorageService.setItem('automatic_backup_settings', JSON.stringify({ interval }));
+    await storageService.setItem('automatic_backup_settings', JSON.stringify({ interval }));
     
     console.log(`⏰ Automatic backup scheduled: ${interval}`);
   }
@@ -368,7 +368,7 @@ class CloudBackupService implements ICloudBackupService {
       this.automaticBackupInterval = undefined;
     }
 
-    await StorageService.removeItem('automatic_backup_settings');
+    await storageService.removeItem('automatic_backup_settings');
     console.log('⏹️ Automatic backup cancelled');
   }
 
@@ -376,7 +376,7 @@ class CloudBackupService implements ICloudBackupService {
     this.ensureInitialized();
 
     try {
-      const backupData = await StorageService.getItem(`backup_${backupId}`);
+      const backupData = await storageService.getItem(`backup_${backupId}`);
       if (!backupData) {
         return false;
       }
@@ -409,7 +409,7 @@ class CloudBackupService implements ICloudBackupService {
     this.ensureInitialized();
 
     try {
-      const backupData = await StorageService.getItem(`backup_${backupId}`);
+      const backupData = await storageService.getItem(`backup_${backupId}`);
       if (!backupData) {
         return false;
       }
@@ -447,7 +447,7 @@ class CloudBackupService implements ICloudBackupService {
   // Helper methods
   private async addToBackupList(backupInfo: CloudBackupInfo): Promise<void> {
     try {
-      const backupList = await StorageService.getItem('backup_list');
+      const backupList = await storageService.getItem('backup_list');
       const backups = backupList ? JSON.parse(backupList) as CloudBackupInfo[] : [];
       
       backups.push(backupInfo);
@@ -459,24 +459,24 @@ class CloudBackupService implements ICloudBackupService {
         // Clean up old backup data
         for (const oldBackup of oldBackups) {
           try {
-            await StorageService.removeItem(`backup_${oldBackup.backupId}`);
+            await storageService.removeItem(`backup_${oldBackup.backupId}`);
           } catch (error) {
             console.warn(`Failed to clean up old backup ${oldBackup.backupId}:`, error);
           }
         }
       }
       
-      await StorageService.setItem('backup_list', JSON.stringify(backups));
+      await storageService.setItem('backup_list', JSON.stringify(backups));
     } catch (error) {
       console.error('Failed to update backup list:', error);
     }
   }
 
   private async getDeviceId(): Promise<string> {
-    let deviceId = await StorageService.getItem('device_id');
+    let deviceId = await storageService.getItem('device_id');
     if (!deviceId) {
       deviceId = `device_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-      await StorageService.setItem('device_id', deviceId);
+      await storageService.setItem('device_id', deviceId);
     }
     return deviceId;
   }
@@ -504,7 +504,7 @@ class CloudBackupService implements ICloudBackupService {
   }
 
   private formatFileSize(bytes: number): string {
-    if (bytes === 0) return '0 Bytes';
+    if (bytes === 0) {return '0 Bytes';}
     
     const k = 1024;
     const sizes = ['Bytes', 'KB', 'MB', 'GB'];

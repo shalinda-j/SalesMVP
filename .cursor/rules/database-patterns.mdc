@@ -1,0 +1,96 @@
+# Database Patterns and SQLite Operations
+
+## Database Architecture
+
+### Core Database Class
+The [Database.ts](mdc:src/stores/Database.ts) provides the foundation for all database operations:
+- SQLite database initialization and management
+- Transaction support for data integrity
+- Type-safe CRUD operations
+- Error handling with `DatabaseError` interface
+
+### Database Factory
+[DatabaseFactory.ts](mdc:src/stores/DatabaseFactory.ts) handles:
+- Database initialization and setup
+- Table creation and schema management
+- Environment-specific database configuration
+
+## Database Schema
+
+### Core Tables
+1. **products** - Product catalog with SKU, pricing, inventory
+2. **sales** - Sales transactions with status tracking
+3. **sale_items** - Individual items within sales
+4. **payments** - Payment information and methods
+
+### Key Relationships
+- `sales` → `sale_items` (one-to-many)
+- `sales` → `payments` (one-to-many)
+- `sale_items` → `products` (many-to-one)
+
+## Service Layer Pattern
+
+### Product Operations
+[ProductService.ts](mdc:src/services/ProductService.ts) provides:
+- CRUD operations for products
+- SKU-based product lookup
+- Inventory management
+- Category filtering
+
+### Sales Operations
+[SalesService.ts](mdc:src/services/SalesService.ts) handles:
+- Sale creation and management
+- Sale item operations
+- Payment processing
+- Sales analytics and reporting
+
+### Analytics Operations
+[AnalyticsService.ts](mdc:src/services/AnalyticsService.ts) offers:
+- Sales analytics and metrics
+- Product performance data
+- Financial reporting
+- Time-based analytics
+
+## Database Operations Pattern
+
+### Transaction Support
+Use `executeTransaction<T>` for complex operations:
+```typescript
+await database.executeTransaction(async (db) => {
+  // Multiple database operations
+  const sale = await createSale(saleData);
+  await createSaleItems(sale.id, items);
+  await createPayment(sale.id, paymentData);
+});
+```
+
+### Error Handling
+Implement proper error handling with typed errors:
+```typescript
+try {
+  const result = await database.createProduct(productData);
+} catch (error) {
+  if (error instanceof DatabaseError) {
+    // Handle specific database errors
+  }
+}
+```
+
+### Type Safety
+All database operations use TypeScript interfaces:
+- `CreateProductInput` - Product creation data
+- `UpdateProductInput` - Product update data
+- `CreateSaleInput` - Sale creation data
+- `CreatePaymentInput` - Payment creation data
+
+## Best Practices
+- Always use transactions for multi-table operations
+- Implement proper error handling and logging
+- Use prepared statements to prevent SQL injection
+- Maintain data integrity with foreign key constraints
+- Implement proper indexing for performance
+- Use type-safe interfaces for all database operations
+description:
+globs:
+alwaysApply: false
+---

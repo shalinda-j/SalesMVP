@@ -1,0 +1,45 @@
+# TypeScript Patterns and Conventions
+
+## Core Entity Interfaces
+The project uses well-defined TypeScript interfaces for all core entities. Reference [src/types/index.ts](mdc:src/types/index.ts) for the complete type definitions:
+
+### Key Interfaces
+- `Product` - Product entity with SKU, pricing, and inventory
+- `Sale` - Sales transaction with status tracking
+- `SaleItem` - Individual items within a sale
+- `Payment` - Payment information with method tracking
+
+### Service Pattern
+All services follow a singleton pattern with clear interfaces:
+- [ProductService.ts](mdc:src/services/ProductService.ts) - Product CRUD operations
+- [SalesService.ts](mdc:src/services/SalesService.ts) - Sales management
+- [AnalyticsService.ts](mdc:src/services/AnalyticsService.ts) - Analytics data
+
+### Component Props
+Components use strongly-typed props with clear interfaces:
+- `CameraViewProps` - Barcode scanner props
+- `SaleInterfaceProps` - POS interface props
+- `SalesSummaryProps` - Dashboard summary props
+
+### State Management
+Screen components use typed state interfaces:
+- `POSScreenState` - POS screen state
+- `DashboardScreenState` - Dashboard state
+- `CameraState` - Camera permissions and scanning state
+
+## Database Operations
+The [Database.ts](mdc:src/stores/Database.ts) provides typed CRUD operations with:
+- Transaction support via `executeTransaction<T>`
+- Error handling with `DatabaseError` interface
+- Type-safe table operations
+
+## Best Practices
+- Always use TypeScript interfaces for component props
+- Implement proper error handling with typed error objects
+- Use enums for status values (e.g., Sale status, Payment methods)
+- Maintain type safety in database operations
+- Use generic types for reusable components
+description:
+globs:
+alwaysApply: false
+---

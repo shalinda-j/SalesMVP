@@ -1,0 +1,69 @@
+# Component Architecture and UI Patterns
+
+## Component Organization
+
+### Base UI Components (`src/components/ui/`)
+The project uses a design system with base components:
+- [Button.tsx](mdc:src/components/ui/Button.tsx) - Reusable button component
+- [Card.tsx](mdc:src/components/ui/Card.tsx) - Card container component
+- [Input.tsx](mdc:src/components/ui/Input.tsx) - Form input component
+
+### Feature Components (`src/components/`)
+- [ModernPOSInterface.tsx](mdc:src/components/ModernPOSInterface.tsx) - Main POS interface
+- [BarcodeScanner.tsx](mdc:src/components/BarcodeScanner.tsx) - Camera scanning
+- [AnalyticsDashboard.tsx](mdc:src/components/AnalyticsDashboard.tsx) - Analytics visualization
+- [ProductForm.tsx](mdc:src/components/ProductForm.tsx) - Product management form
+
+### Screen Components (`src/screens/`)
+Organized by feature domain:
+- **POS**: [pos/](mdc:src/screens/pos/) - Point of sale screens
+- **Dashboard**: [dashboard/](mdc:src/screens/dashboard/) - Analytics and overview
+- **Inventory**: [inventory/](mdc:src/screens/inventory/) - Product management
+- **Reports**: [reports/](mdc:src/screens/reports/) - Analytics and reporting
+
+## Component Patterns
+
+### State Management
+- Use React hooks (`useState`, `useEffect`) for local state
+- Implement proper loading and error states
+- Use typed state interfaces for complex state objects
+
+### Props Interface
+All components should have well-defined TypeScript interfaces:
+```typescript
+interface ComponentProps {
+  // Required props
+  requiredProp: string;
+  // Optional props with defaults
+  optionalProp?: number;
+  // Event handlers
+  onAction: (data: any) => void;
+}
+```
+
+### Error Handling
+- Implement proper error boundaries
+- Use try-catch blocks in async operations
+- Display user-friendly error messages
+
+### Responsive Design
+- Use [responsive.ts](mdc:src/utils/responsive.ts) utilities
+- Implement adaptive layouts for different screen sizes
+- Follow mobile-first design principles
+
+## Styling Patterns
+- Use StyleSheet for component styles
+- Follow the theme system in [theme.ts](mdc:src/styles/theme.ts)
+- Implement consistent spacing and typography
+- Use themed colors from [Colors.ts](mdc:constants/Colors.ts)
+
+## Best Practices
+- Keep components focused and single-purpose
+- Use composition over inheritance
+- Implement proper prop validation
+- Follow React Native performance best practices
+- Use proper TypeScript typing for all props and state
+description:
+globs:
+alwaysApply: false
+---

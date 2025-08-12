@@ -40,7 +40,7 @@ export const EnhancedProductSearch: React.FC<EnhancedProductSearchProps> = ({
   const [searchMode, setSearchMode] = useState<'all' | 'search'>('all');
   
   // Debounce search
-  const searchTimeoutRef = useRef<NodeJS.Timeout>();
+  const searchTimeoutRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
 
   useEffect(() => {
     if (visible) {
@@ -74,7 +74,6 @@ export const EnhancedProductSearch: React.FC<EnhancedProductSearchProps> = ({
       setProducts(allProducts);
       setFilteredProducts(allProducts);
     } catch (error) {
-      console.error('Error loading products:', error);
       Alert.alert('Error', 'Failed to load products');
     } finally {
       setLoading(false);
@@ -107,15 +106,6 @@ export const EnhancedProductSearch: React.FC<EnhancedProductSearchProps> = ({
   const handleBarcodeScanned = (barcode: string) => {
     // Set the barcode as search query to trigger search
     setSearchQuery(barcode);
-  };
-
-  const handleProductFoundByBarcode = (product: Product) => {
-    handleProductSelect(product);
-  };
-
-  const handleManualSearchFromScanner = () => {
-    setShowScanner(false);
-    // Focus will be handled by the search input
   };
 
   const renderProductItem = ({ item }: { item: Product }) => (
@@ -275,9 +265,7 @@ export const EnhancedProductSearch: React.FC<EnhancedProductSearchProps> = ({
       <BarcodeScanner
         visible={showScanner}
         onClose={() => setShowScanner(false)}
-        onProductFound={handleProductFoundByBarcode}
-        onBarcodeScanned={handleBarcodeScanned}
-        onManualSearch={handleManualSearchFromScanner}
+        onScan={handleBarcodeScanned}
       />
     </>
   );

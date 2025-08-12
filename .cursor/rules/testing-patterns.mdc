@@ -1,0 +1,117 @@
+# Testing Patterns and Conventions
+
+## Testing Structure
+
+### Test Organization
+Tests are organized alongside the code they test:
+- `src/components/__tests__/` - Component tests
+- `src/services/__tests__/` - Service tests
+- `src/stores/__tests__/` - Database and store tests
+- `src/utils/__tests__/` - Utility function tests
+
+### Test Files
+- Component tests: `ComponentName.test.tsx`
+- Service tests: `ServiceName.test.ts`
+- Utility tests: `utilityName.test.ts`
+
+## Testing Framework
+
+### Jest Configuration
+- [jest.config.js](mdc:jest.config.js) - Jest configuration
+- [jest.setup.js](mdc:jest.setup.js) - Test setup and mocks
+- [babel.config.js](mdc:babel.config.js) - Babel configuration for testing
+
+### Test Utilities
+- [src/utils/basic.test.ts](mdc:src/utils/__tests__/basic.test.ts) - Basic utility tests
+- [src/stores/Database.test.ts](mdc:src/stores/__tests__/Database.test.ts) - Database operation tests
+- [src/stores/Database.crud.test.ts](mdc:src/stores/__tests__/Database.crud.test.ts) - CRUD operation tests
+
+## Component Testing
+
+### UI Component Tests
+- [Button.test.tsx](mdc:src/components/ui/__tests__/Button.test.tsx) - Button component tests
+- [Card.test.tsx](mdc:src/components/ui/__tests__/Card.test.tsx) - Card component tests
+- [StyledText.test.js](mdc:components/__tests__/StyledText-test.js) - Styled text component tests
+
+### Feature Component Tests
+- [BarcodeScanner.test.tsx](mdc:src/components/__tests__/BarcodeScanner.test.tsx) - Barcode scanner tests
+
+## Service Testing
+
+### Mock Services
+- [src/services/__mocks__/ProductService.ts](mdc:src/services/__mocks__/ProductService.ts) - Product service mocks
+
+### Service Test Patterns
+```typescript
+describe('ServiceName', () => {
+  beforeEach(() => {
+    // Setup test environment
+  });
+
+  afterEach(() => {
+    // Cleanup after tests
+  });
+
+  it('should perform expected operation', async () => {
+    // Test implementation
+  });
+});
+```
+
+## Database Testing
+
+### Database Test Patterns
+- Use in-memory SQLite for testing
+- Reset database state between tests
+- Test transaction rollbacks
+- Verify data integrity
+
+### CRUD Test Coverage
+- Create operations with valid data
+- Read operations with various filters
+- Update operations with partial data
+- Delete operations with proper cleanup
+
+## Testing Best Practices
+
+### Test Structure
+- Use descriptive test names
+- Follow AAA pattern (Arrange, Act, Assert)
+- Test both success and failure scenarios
+- Mock external dependencies
+
+### Coverage Requirements
+- Aim for high test coverage
+- Focus on critical business logic
+- Test edge cases and error conditions
+- Ensure proper error handling
+
+### Performance Testing
+- Test database query performance
+- Verify component rendering performance
+- Test memory usage patterns
+- Monitor test execution time
+
+## Mocking Patterns
+
+### Service Mocks
+- Mock external API calls
+- Mock database operations
+- Mock file system operations
+- Mock device capabilities (camera, etc.)
+
+### Component Mocks
+- Mock navigation props
+- Mock context providers
+- Mock async operations
+- Mock user interactions
+
+## Continuous Integration
+- Tests run on every commit
+- Coverage reports generated
+- Performance benchmarks tracked
+- Test results published to coverage directory
+description:
+globs:
+alwaysApply: false
+---

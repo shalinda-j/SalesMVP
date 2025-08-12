@@ -113,7 +113,7 @@ export const DemoAuthProvider: React.FC<DemoAuthProviderProps> = ({ children }) 
   };
 
   const hasPermission = (permission: keyof UserPermissions): boolean => {
-    if (!permissions) return false;
+    if (!permissions) {return false;}
     return permissions[permission] || false;
   };
 

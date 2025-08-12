@@ -1,692 +1,333 @@
-import React, { useState, useCallback, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   View,
   Text,
   StyleSheet,
-  ScrollView,
-  Dimensions,
-  RefreshControl,
+  FlatList,
   Alert,
-  Modal,
   SafeAreaView,
+  RefreshControl,
+  Modal,
+  TouchableOpacity,
+  ScrollView,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { theme } from '../styles/theme';
-import { Card } from './ui/Card';
-import { Button } from './ui/Button';
-import { Input } from './ui/Input';
-import {
-  HapticFeedback,
-  ToastManager,
-  DateTimeHelpers,
-  AccessibilityHelpers,
-} from '../utils/ux';
+import { Product, CreateProductInput } from '../types';
 import { productService } from '../services/ProductService';
-import { inventoryService } from '../services/InventoryService';
-import { useAuth } from '../contexts/DemoAuthContext';
-import { Product } from '../types';
+import { seedDataService } from '../services/SeedDataService';
+import { modernTheme, getTypography, getSpacing } from '../styles/modern-theme';
+import { ModernButton } from './ui/ModernButton';
+import { ModernCard } from './ui/ModernCard';
+import { ModernInput } from './ui/ModernInput';
 
-const { width } = Dimensions.get('window');
-const isTablet = width > 768;
-
-interface InventoryStatsProps {
-  title: string;
-  value: string | number;
-  icon: keyof typeof Ionicons.glyphMap;
-  color: string;
-  status?: 'normal' | 'warning' | 'critical';
+interface InventoryStats {
+  totalProducts: number;
+  lowStockItems: number;
+  outOfStockItems: number;
+  totalValue: number;
 }
-
-const InventoryStats: React.FC<InventoryStatsProps> = ({ 
-  title, 
-  value, 
-  icon, 
-  color, 
-  status = 'normal' 
-}) => {
-  const getStatusColor = () => {
-    switch (status) {
-      case 'warning': return theme.colors.warning;
-      case 'critical': return theme.colors.error;
-      default: return color;
-    }
-  };
-
-  return (
-    <Card variant="elevated" padding="lg" style={styles.statsCard}>
-      <View style={styles.statsHeader}>
-        <View style={[styles.statsIcon, { backgroundColor: getStatusColor() + '20' }]}>
-          <Ionicons name={icon} size={24} color={getStatusColor()} />
-        </View>
-        {status !== 'normal' && (
-          <View style={styles.statusIndicator}>
-            <Ionicons 
-              name={status === 'warning' ? 'warning' : 'alert-circle'} 
-              size={16} 
-              color={getStatusColor()} 
-            />
-          </View>
-        )}
-      </View>
-      <Text style={styles.statsValue}>{value}</Text>
-      <Text style={styles.statsTitle}>{title}</Text>
-    </Card>
-  );
-};
-
-interface ProductItemProps {
-  name: string;
-  sku: string;
-  stock: number;
-  price: number;
-  lowStockThreshold: number;
-  category: string;
-  onEdit?: (product: ProductItemProps) => void;
-  onStockAdjust?: (product: ProductItemProps) => void;
-}
-
-const ProductItem: React.FC<ProductItemProps> = ({ 
-  name, 
-  sku, 
-  stock, 
-  price, 
-  lowStockThreshold, 
-  category,
-  onEdit,
-  onStockAdjust 
-}) => {
-  const stockStatus = stock === 0 ? 'critical' : stock <= lowStockThreshold ? 'warning' : 'normal';
-  const stockColor = stockStatus === 'critical' ? theme.colors.error : 
-                    stockStatus === 'warning' ? theme.colors.warning : 
-                    theme.colors.success;
-
-  return (
-    <Card variant="outlined" padding="md" style={styles.productItem}>
-      <View style={styles.productHeader}>
-        <View style={styles.productInfo}>
-          <Text style={styles.productName}>{name}</Text>
-          <Text style={styles.productSku}>SKU: {sku}</Text>
-          <Text style={styles.productCategory}>{category}</Text>
-        </View>
-        <View style={styles.productActions}>
-          <Text style={styles.productPrice}>${price.toFixed(2)}</Text>
-          <Button
-            title="Edit"
-            size="sm"
-            variant="ghost"
-            icon="pencil"
-            onPress={() => onEdit?.({ name, sku, stock, price, lowStockThreshold, category })}
-          />
-        </View>
-      </View>
-      
-      <View style={styles.stockInfo}>
-        <View style={styles.stockLevel}>
-          <Ionicons 
-            name="cube-outline" 
-            size={16} 
-            color={stockColor}
-          />
-          <Text style={[styles.stockText, { color: stockColor }]}>
-            {stock} in stock
-          </Text>
-          {stockStatus !== 'normal' && (
-            <Text style={styles.stockWarning}>
-              {stockStatus === 'critical' ? 'Out of stock' : 'Low stock'}
-            </Text>
-          )}
-        </View>
-        
-        <Button
-          title="Adjust"
-          size="sm"
-          variant="outline"
-          icon="swap-horizontal"
-          onPress={() => onStockAdjust?.({ name, sku, stock, price, lowStockThreshold, category })}
-        />
-      </View>
-    </Card>
-  );
-};
 
 export const ModernInventoryInterface: React.FC = () => {
-  const { user, hasPermission } = useAuth();
+  const [products, setProducts] = useState<Product[]>([]);
   const [refreshing, setRefreshing] = useState(false);
-  const [searchQuery, setSearchQuery] = useState('');
-  const [selectedFilter, setSelectedFilter] = useState<'all' | 'low' | 'out'>('all');
   const [showAddProductModal, setShowAddProductModal] = useState(false);
-  const [realProducts, setRealProducts] = useState<Product[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [inventoryStats, setInventoryStats] = useState({
-    totalProducts: 0,
-    totalValue: 0,
-    lowStockItems: 0,
-    outOfStockItems: 0
-  });
   const [newProductForm, setNewProductForm] = useState({
     name: '',
     sku: '',
     price: '',
+    cost: '',
     stock: '',
     category: '',
-    lowStockThreshold: ''
+    taxRate: '0.08'
   });
 
-  // Initialize database and load real product data
-  const initializeAndLoadProducts = useCallback(async () => {
-    if (!hasPermission('canViewInventory')) {
-      return;
-    }
-
+  const loadProducts = useCallback(async () => {
     try {
-      setLoading(true);
-      
-      // First, ensure database is initialized
-      const { database } = await import('../stores/DatabaseFactory');
-      
-      // Initialize the database if it hasn't been initialized yet
-      if (database && typeof database.initialize === 'function') {
-        try {
-          await database.initialize();
-          console.log('✅ Database initialized successfully');
-        } catch (initError) {
-          console.warn('⚠️ Database initialization failed, using fallback:', initError);
-        }
-      }
-      
-      // Try to load products
-      try {
-        const products = await productService.getAllProducts();
-        setRealProducts(products);
-        
-        // Calculate stats
-        const stats = await productService.getProductStats();
-        setInventoryStats({
-          totalProducts: stats.totalProducts,
-          totalValue: Math.round(stats.totalValue),
-          lowStockItems: stats.lowStockCount,
-          outOfStockItems: products.filter(p => p.stock_qty === 0).length
-        });
-      } catch (productError) {
-        console.warn('⚠️ Failed to load products from database, using fallback data:', productError);
-        // Use fallback sample data when database fails
-        setInventoryStats({
-          totalProducts: sampleProducts.length,
-          totalValue: Math.round(sampleProducts.reduce((sum, p) => sum + (p.price * p.stock), 0)),
-          lowStockItems: sampleProducts.filter(p => p.stock <= p.lowStockThreshold && p.stock > 0).length,
-          outOfStockItems: sampleProducts.filter(p => p.stock === 0).length
-        });
+      const allProducts = await productService.getAllProducts();
+      if (allProducts.length === 0) {
+        await seedDataService.seedSampleProducts();
+        const seededProducts = await productService.getAllProducts();
+        setProducts(seededProducts);
+      } else {
+        setProducts(allProducts);
       }
     } catch (error) {
-      console.error('Failed to initialize database or load products:', error);
-      // Use fallback sample data
-      setInventoryStats({
-        totalProducts: sampleProducts.length,
-        totalValue: Math.round(sampleProducts.reduce((sum, p) => sum + (p.price * p.stock), 0)),
-        lowStockItems: sampleProducts.filter(p => p.stock <= p.lowStockThreshold && p.stock > 0).length,
-        outOfStockItems: sampleProducts.filter(p => p.stock === 0).length
-      });
-    } finally {
-      setLoading(false);
+      Alert.alert('Error', 'Failed to load inventory');
     }
-  }, [hasPermission]);
+  }, []);
 
   useEffect(() => {
-    initializeAndLoadProducts();
-  }, [initializeAndLoadProducts]);
+    loadProducts();
+  }, [loadProducts]);
 
   const handleRefresh = async () => {
     setRefreshing(true);
-    await initializeAndLoadProducts();
+    await loadProducts();
     setRefreshing(false);
-    ToastManager.success('Product data refreshed successfully');
   };
 
-  // Button handler functions
-  const handleAddProduct = useCallback(() => {
-    console.log('➕ Add Product button pressed');
-    HapticFeedback.medium();
+  const getInventoryStats = (): InventoryStats => {
+    const totalProducts = products.length;
+    const lowStockItems = products.filter(p => p.stock_qty > 0 && p.stock_qty <= 10).length;
+    const outOfStockItems = products.filter(p => p.stock_qty === 0).length;
+    const totalValue = products.reduce((sum, p) => sum + (p.price * p.stock_qty), 0);
+
+    return {
+      totalProducts,
+      lowStockItems,
+      outOfStockItems,
+      totalValue,
+    };
+  };
+
+  const getStockStatus = (stock: number) => {
+    if (stock === 0) {return { status: 'out-of-stock', color: modernTheme.colors.error[500], icon: 'close-circle' };}
+    if (stock <= 10) {return { status: 'low-stock', color: modernTheme.colors.warning[500], icon: 'warning' };}
+    return { status: 'in-stock', color: modernTheme.colors.success[500], icon: 'checkmark-circle' };
+  };
+
+  const handleAddProduct = () => {
     setShowAddProductModal(true);
-  }, []);
+  };
 
-  const handleSaveNewProduct = useCallback(async () => {
-    const { name, sku, price, stock, category, lowStockThreshold } = newProductForm;
-    
-    if (!name || !sku || !price || !stock || !category) {
-      Alert.alert('Missing Information', 'Please fill in all required fields');
-      return;
-    }
-
-    if (!hasPermission('canManageProducts')) {
-      Alert.alert('Access Denied', 'You do not have permission to create products.');
-      return;
-    }
-
-    HapticFeedback.heavy();
-    
+  const handleSaveProduct = async () => {
     try {
-      setLoading(true);
-      
-      const productData = {
-        name,
-        sku,
-        price: parseFloat(price),
-        cost: parseFloat(price) * 0.7, // Default cost estimate
-        stock_qty: parseInt(stock),
-        tax_rate: 0.1 // Default tax rate
-      };
-      
-      await productService.createProduct(productData);
-      
-      // Create initial stock adjustment record
-      if (user?.id) {
-        await inventoryService.adjustStock({
-          productId: sku, // Using SKU as productId for now
-          adjustmentType: 'increase',
-          quantity: parseInt(stock),
-          reason: 'Initial stock - Product creation'
-        }, user.id);
+      // Validate form
+      if (!newProductForm.name.trim() || !newProductForm.sku.trim() || !newProductForm.price || !newProductForm.cost) {
+        Alert.alert('Validation Error', 'Please fill in all required fields');
+        return;
       }
+
+      const price = parseFloat(newProductForm.price);
+      const cost = parseFloat(newProductForm.cost);
+      const stock = parseInt(newProductForm.stock) || 0;
+      const taxRate = parseFloat(newProductForm.taxRate) || 0.08;
+
+      if (isNaN(price) || price < 0) {
+        Alert.alert('Validation Error', 'Please enter a valid price');
+        return;
+      }
+
+      if (isNaN(cost) || cost < 0) {
+        Alert.alert('Validation Error', 'Please enter a valid cost');
+        return;
+      }
+
+      const productInput: CreateProductInput = {
+        name: newProductForm.name.trim(),
+        sku: newProductForm.sku.trim().toUpperCase(),
+        price,
+        cost,
+        stock_qty: stock,
+        tax_rate: taxRate
+      };
+
+      await productService.createProduct(productInput);
       
-      setShowAddProductModal(false);
+      // Reset form and close modal
       setNewProductForm({
         name: '',
         sku: '',
         price: '',
+        cost: '',
         stock: '',
         category: '',
-        lowStockThreshold: ''
+        taxRate: '0.08'
       });
+      setShowAddProductModal(false);
       
-      // Refresh product list
-      await initializeAndLoadProducts();
+      // Refresh the product list
+      await loadProducts();
       
-      ToastManager.success(`${name} has been added to inventory`);
-    } catch (error: any) {
-      console.error('Failed to create product:', error);
-      ToastManager.error(error.message || 'Failed to create product');
-    } finally {
-      setLoading(false);
-    }
-  }, [newProductForm, hasPermission, user?.id, initializeAndLoadProducts]);
-
-  const handleEditProduct = useCallback((product: ProductItemProps) => {
-    console.log('📝 Edit button pressed for product:', product.name);
-    HapticFeedback.light();
-    Alert.alert(
-      'Edit Product',
-      `Edit ${product.name} (${product.sku})`,
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Edit Details',
-          onPress: () => {
-            ToastManager.info('Product editing interface would open here');
-          }
-        },
-        {
-          text: 'Quick Price Update',
-          onPress: () => {
-            // Use standard prompt for web compatibility
-            const newPrice = prompt(`Update price for ${product.name}\nCurrent price: $${product.price}`, product.price.toString());
-            if (newPrice && !isNaN(Number(newPrice))) {
-              HapticFeedback.medium();
-              ToastManager.success(`${product.name} price updated to $${newPrice}`);
-            } else if (newPrice !== null) {
-              ToastManager.warning('Invalid price entered');
-            }
-          }
-        }
-      ]
-    );
-  }, []);
-
-  const handleStockAdjustment = useCallback((product: ProductItemProps) => {
-    console.log('📦 Adjust button pressed for product:', product.name, 'Current stock:', product.stock);
-    HapticFeedback.light();
-    Alert.alert(
-      'Stock Adjustment',
-      `Current stock: ${product.stock} units\nAdjust stock for ${product.name}`,
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Add Stock',
-          onPress: () => {
-            const quantity = prompt('Add Stock', 'Enter quantity to add:');
-            if (quantity && !isNaN(Number(quantity)) && Number(quantity) > 0) {
-              HapticFeedback.medium();
-              ToastManager.success(`Added ${quantity} units to ${product.name}`);
-            } else if (quantity !== null && quantity !== '') {
-              ToastManager.warning('Invalid quantity entered');
-            }
-          }
-        },
-        {
-          text: 'Remove Stock',
-          style: 'destructive',
-          onPress: () => {
-            const quantity = prompt('Remove Stock', 'Enter quantity to remove:');
-            if (quantity && !isNaN(Number(quantity)) && Number(quantity) > 0) {
-              const newStock = Math.max(0, product.stock - Number(quantity));
-              HapticFeedback.heavy();
-              if (newStock === 0) {
-                ToastManager.warning(`Removed ${quantity} units from ${product.name} - Now out of stock!`);
-              } else {
-                ToastManager.success(`Removed ${quantity} units from ${product.name}`);
-              }
-            } else if (quantity !== null && quantity !== '') {
-              ToastManager.warning('Invalid quantity entered');
-            }
-          }
-        }
-      ]
-    );
-  }, []);
-
-  const handleBulkImport = useCallback(() => {
-    console.log('📂 Bulk Import button pressed');
-    HapticFeedback.medium();
-    Alert.alert(
-      'Bulk Import',
-      'Import products from CSV or Excel file',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Select File',
-          onPress: () => {
-            ToastManager.info('File picker and bulk import functionality will be available in the next update');
-          }
-        },
-        {
-          text: 'Download Template',
-          onPress: () => {
-            ToastManager.info('CSV template download would start here');
-          }
-        }
-      ]
-    );
-  }, []);
-
-  const handleStockReport = useCallback(async () => {
-    console.log('📊 Stock Report button pressed');
-    if (!hasPermission('canViewReports')) {
-      Alert.alert('Access Denied', 'You do not have permission to generate reports.');
-      return;
-    }
-
-    HapticFeedback.medium();
-    
-    try {
-      const stats = await productService.getProductStats();
-      const lowStockProducts = await productService.getLowStockProducts();
-      
-      const reportData = `
-INVENTORY REPORT - ${new Date().toLocaleDateString()}
-=======================================
-
-SUMMARY:
-- Total Products: ${stats.totalProducts}
-- Total Value: $${stats.totalValue.toFixed(2)}
-- Average Price: $${stats.averagePrice.toFixed(2)}
-- Low Stock Items: ${stats.lowStockCount}
-
-LOW STOCK ALERTS:
-${lowStockProducts.map(p => `- ${p.name} (${p.sku}): ${p.stock_qty} units`).join('\n')}
-
-CATEGORY BREAKDOWN:
-${Object.entries(stats.categories).map(([cat, count]) => `- ${cat}: ${count} products`).join('\n')}
-      `.trim();
-      
-      Alert.alert(
-        'Stock Report Generated',
-        reportData,
-        [
-          { text: 'Close', style: 'cancel' },
-          {
-            text: 'Share Report',
-            onPress: () => {
-              ToastManager.success('Report data copied to clipboard');
-            }
-          }
-        ],
-        { cancelable: true }
-      );
+      Alert.alert('Success', 'Product added successfully');
     } catch (error) {
-      console.error('Failed to generate report:', error);
-      ToastManager.error('Failed to generate inventory report');
+      console.error('Failed to add product:', error);
+      Alert.alert('Error', error instanceof Error ? error.message : 'Failed to add product');
     }
-  }, [hasPermission]);
+  };
 
-  const handleReorderAlert = useCallback(() => {
-    console.log('🔔 Reorder Alert button pressed');
-    HapticFeedback.medium();
-    Alert.alert(
-      'Reorder Alert Setup',
-      'Configure automatic reorder notifications',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Configure Alerts',
-          onPress: () => {
-            ToastManager.info('Reorder alert settings would open here');
-          }
-        },
-        {
-          text: 'Test Notification',
-          onPress: () => {
-            HapticFeedback.heavy();
-            ToastManager.warning('This is how reorder alerts will look');
-          }
-        }
-      ]
+  const handleEditProduct = (product: Product) => {
+    Alert.alert('Edit Product', `Edit ${product.name} - will be implemented in the next update.`);
+  };
+
+  const handleStockAdjustment = (product: Product) => {
+    Alert.alert('Stock Adjustment', `Adjust stock for ${product.name} - will be implemented in the next update.`);
+  };
+
+  const renderProduct = ({ item }: { item: Product }) => {
+    const stockStatus = getStockStatus(item.stock_qty);
+    
+    return (
+      <ModernCard
+        variant="default"
+        padding="md"
+        style={styles.productItem}
+      >
+        <View style={styles.productContent}>
+          <View style={styles.productInfo}>
+            <Text style={styles.productName} numberOfLines={2}>
+              {item.name}
+            </Text>
+            <Text style={styles.productSku}>SKU: {item.sku}</Text>
+            <View style={styles.stockInfo}>
+              <Ionicons 
+                name={stockStatus.icon as keyof typeof Ionicons.glyphMap} 
+                size={16} 
+                color={stockStatus.color} 
+              />
+              <Text style={[styles.stockText, { color: stockStatus.color }]}>
+                Stock: {item.stock_qty}
+              </Text>
+            </View>
+          </View>
+          <View style={styles.productActions}>
+            <Text style={styles.productPrice}>${item.price.toFixed(2)}</Text>
+            <View style={styles.actionButtons}>
+              <ModernButton
+                title="Edit"
+                onPress={() => handleEditProduct(item)}
+                variant="ghost"
+                size="sm"
+                icon={
+                  <Ionicons
+                    name="create-outline"
+                    size={16}
+                    color={modernTheme.colors.primary[500]}
+                  />
+                }
+                style={styles.actionButton}
+              />
+              <ModernButton
+                title="Stock"
+                onPress={() => handleStockAdjustment(item)}
+                variant="ghost"
+                size="sm"
+                icon={
+                  <Ionicons
+                    name="add-circle-outline"
+                    size={16}
+                    color={modernTheme.colors.primary[500]}
+                  />
+                }
+                style={styles.actionButton}
+              />
+            </View>
+          </View>
+        </View>
+      </ModernCard>
     );
-  }, []);
+  };
 
-  const resetAddProductForm = useCallback(() => {
-    setNewProductForm({
-      name: '',
-      sku: '',
-      price: '',
-      stock: '',
-      category: '',
-      lowStockThreshold: ''
-    });
-  }, []);
-
-  // Create display stats from state data
-  const displayStats = [
-    {
-      title: 'Total Products',
-      value: inventoryStats.totalProducts || 0,
-      icon: 'cube' as const,
-      color: theme.colors.primary,
-      status: 'normal' as const
-    },
-    {
-      title: 'Low Stock',
-      value: inventoryStats.lowStockItems || 0,
-      icon: 'warning' as const,
-      color: theme.colors.warning,
-      status: inventoryStats.lowStockItems > 0 ? 'warning' as const : 'normal' as const
-    },
-    {
-      title: 'Out of Stock',
-      value: inventoryStats.outOfStockItems || 0,
-      icon: 'alert-circle' as const,
-      color: theme.colors.error,
-      status: inventoryStats.outOfStockItems > 0 ? 'critical' as const : 'normal' as const
-    },
-    {
-      title: 'Total Value',
-      value: `$${inventoryStats.totalValue.toLocaleString()}`,
-      icon: 'cash' as const,
-      color: theme.colors.success,
-      status: 'normal' as const
-    }
-  ];
-
-  const sampleProducts: ProductItemProps[] = [
-    {
-      name: 'Wireless Bluetooth Headphones',
-      sku: 'WBH-001',
-      stock: 5,
-      price: 79.99,
-      lowStockThreshold: 10,
-      category: 'Electronics'
-    },
-    {
-      name: 'Organic Coffee Beans (1kg)',
-      sku: 'OCB-500',
-      stock: 0,
-      price: 24.99,
-      lowStockThreshold: 5,
-      category: 'Food & Beverage'
-    },
-    {
-      name: 'Premium Yoga Mat',
-      sku: 'PYM-200',
-      stock: 25,
-      price: 49.99,
-      lowStockThreshold: 8,
-      category: 'Fitness'
-    },
-    {
-      name: 'Stainless Steel Water Bottle',
-      sku: 'SSWB-750',
-      stock: 3,
-      price: 19.99,
-      lowStockThreshold: 15,
-      category: 'Accessories'
-    }
-  ];
-
-  const filteredProducts = sampleProducts.filter(product => {
-    const matchesSearch = product.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                         product.sku.toLowerCase().includes(searchQuery.toLowerCase());
-    
-    if (selectedFilter === 'all') return matchesSearch;
-    if (selectedFilter === 'low') return matchesSearch && product.stock <= product.lowStockThreshold && product.stock > 0;
-    if (selectedFilter === 'out') return matchesSearch && product.stock === 0;
-    
-    return matchesSearch;
-  });
+  const stats = getInventoryStats();
 
   return (
-    <ScrollView 
-      style={styles.container}
-      refreshControl={
-        <RefreshControl refreshing={refreshing} onRefresh={handleRefresh} />
-      }
-      showsVerticalScrollIndicator={false}
-    >
+    <SafeAreaView style={styles.container}>
       {/* Header */}
       <View style={styles.header}>
-        <View>
-          <Text style={styles.title}>Inventory Management</Text>
-          <Text style={styles.subtitle}>Track and manage your products</Text>
+        <View style={styles.headerContent}>
+          <Text style={styles.title}>Inventory</Text>
+          <Text style={styles.subtitle}>Manage your product catalog</Text>
         </View>
-        <Button
+        <ModernButton
           title="Add Product"
-          size="sm"
-          variant="primary"
-          icon="add"
           onPress={handleAddProduct}
-        />
-      </View>
-
-      {/* Stats Grid */}
-      <View style={styles.statsGrid}>
-        {displayStats.map((stat, index) => (
-          <InventoryStats key={index} {...stat} />
-        ))}
-      </View>
-
-      {/* Search and Filters */}
-      <Card variant="glass" padding="lg" style={styles.searchCard}>
-        <Input
-          label="Search Products"
-          value={searchQuery}
-          onChangeText={setSearchQuery}
-          leftIcon="search"
-          placeholder="Enter product name or SKU..."
-          variant="filled"
-        />
-        
-        <View style={styles.filterButtons}>
-          {[
-            { key: 'all', title: 'All Products', count: sampleProducts.length },
-            { key: 'low', title: 'Low Stock', count: sampleProducts.filter(p => p.stock <= p.lowStockThreshold && p.stock > 0).length },
-            { key: 'out', title: 'Out of Stock', count: sampleProducts.filter(p => p.stock === 0).length }
-          ].map((filter) => (
-            <Button
-              key={filter.key}
-              title={`${filter.title} (${filter.count})`}
-              size="sm"
-              variant={selectedFilter === filter.key ? 'primary' : 'ghost'}
-              onPress={() => setSelectedFilter(filter.key as any)}
-              style={styles.filterButton}
+          variant="primary"
+          size="sm"
+          icon={
+            <Ionicons
+              name="add-outline"
+              size={20}
+              color={modernTheme.colors.text.inverse}
             />
-          ))}
-        </View>
-      </Card>
+          }
+        />
+      </View>
 
-      {/* Quick Actions */}
-      <Card variant="outlined" padding="lg" style={styles.quickActionsCard}>
-        <Text style={styles.sectionTitle}>Quick Actions</Text>
-        <View style={styles.quickActionsGrid}>
-          <Button
-            title="Bulk Import"
-            variant="outline"
-            icon="cloud-upload"
-            onPress={handleBulkImport}
-            style={styles.quickActionButton}
-          />
-          <Button
-            title="Stock Report"
-            variant="outline"
-            icon="document-text"
-            onPress={handleStockReport}
-            style={styles.quickActionButton}
-          />
-          <Button
-            title="Reorder Alert"
-            variant="outline"
-            icon="notifications"
-            onPress={handleReorderAlert}
-            style={styles.quickActionButton}
-          />
-        </View>
-      </Card>
 
-      {/* Product List */}
-      <View style={styles.productList}>
-        <Text style={styles.sectionTitle}>
-          Products ({filteredProducts.length})
-        </Text>
-        {filteredProducts.map((product, index) => (
-          <ProductItem 
-            key={index} 
-            {...product} 
-            onEdit={handleEditProduct}
-            onStockAdjust={handleStockAdjustment}
-          />
-        ))}
-        
-        {filteredProducts.length === 0 && (
-          <Card variant="outlined" padding="lg" style={styles.emptyState}>
+
+      {/* Main Scrollable Content */}
+      <FlatList
+        data={products}
+        renderItem={renderProduct}
+        keyExtractor={(item) => item.id.toString()}
+        showsVerticalScrollIndicator={true}
+        refreshControl={
+          <RefreshControl refreshing={refreshing} onRefresh={handleRefresh} />
+        }
+        ListHeaderComponent={
+          <>
+            {/* Stats Cards */}
+            <View style={styles.statsContainer}>
+              <ModernCard variant="elevated" padding="md" style={styles.statCard}>
+                <View style={styles.statContent}>
+                  <Ionicons name="cube" size={24} color={modernTheme.colors.primary[500]} />
+                  <Text style={styles.statValue}>{stats.totalProducts}</Text>
+                  <Text style={styles.statLabel}>Total Products</Text>
+                </View>
+              </ModernCard>
+
+              <ModernCard variant="elevated" padding="md" style={styles.statCard}>
+                <View style={styles.statContent}>
+                  <Ionicons name="warning" size={24} color={modernTheme.colors.warning[500]} />
+                  <Text style={styles.statValue}>{stats.lowStockItems}</Text>
+                  <Text style={styles.statLabel}>Low Stock</Text>
+                </View>
+              </ModernCard>
+
+              <ModernCard variant="elevated" padding="md" style={styles.statCard}>
+                <View style={styles.statContent}>
+                  <Ionicons name="close-circle" size={24} color={modernTheme.colors.error[500]} />
+                  <Text style={styles.statValue}>{stats.outOfStockItems}</Text>
+                  <Text style={styles.statLabel}>Out of Stock</Text>
+                </View>
+              </ModernCard>
+
+              <ModernCard variant="elevated" padding="md" style={styles.statCard}>
+                <View style={styles.statContent}>
+                  <Ionicons name="cash" size={24} color={modernTheme.colors.success[500]} />
+                  <Text style={styles.statValue}>${stats.totalValue.toFixed(0)}</Text>
+                  <Text style={styles.statLabel}>Total Value</Text>
+                </View>
+              </ModernCard>
+            </View>
+
+            {/* Section Header */}
+            <View style={styles.sectionHeader}>
+              <Text style={styles.sectionTitle}>Products</Text>
+              <Text style={styles.productCount}>{products.length} items</Text>
+            </View>
+          </>
+        }
+        ListEmptyComponent={
+          <View style={styles.emptyState}>
             <Ionicons 
               name="cube-outline" 
               size={48} 
-              color={theme.colors.textLight}
+              color={modernTheme.colors.text.tertiary} 
             />
             <Text style={styles.emptyStateText}>No products found</Text>
             <Text style={styles.emptyStateSubtext}>
-              Try adjusting your search or filter criteria
+              Add your first product to get started
             </Text>
-          </Card>
-        )}
-      </View>
-      
+            <ModernButton
+              title="Add Product"
+              onPress={handleAddProduct}
+              variant="primary"
+              size="md"
+              icon={
+                <Ionicons
+                  name="add-outline"
+                  size={20}
+                  color={modernTheme.colors.text.inverse}
+                />
+              }
+              style={styles.emptyStateButton}
+            />
+          </View>
+        }
+        contentContainerStyle={styles.flatListContent}
+      />
+
       {/* Add Product Modal */}
       <Modal
         visible={showAddProductModal}
@@ -696,341 +337,237 @@ ${Object.entries(stats.categories).map(([cat, count]) => `- ${cat}: ${count} pro
       >
         <SafeAreaView style={styles.modalContainer}>
           <View style={styles.modalHeader}>
-            <View style={styles.modalTitleContainer}>
-              <Ionicons name="add-circle" size={24} color={theme.colors.primary} />
-              <Text style={styles.modalTitle}>Add New Product</Text>
-            </View>
-            <Button
-              title="Cancel"
-              variant="ghost"
-              size="sm"
-              icon="close"
-              onPress={() => {
-                HapticFeedback.light();
-                setShowAddProductModal(false);
-                resetAddProductForm();
-              }}
-            />
+            <TouchableOpacity onPress={() => setShowAddProductModal(false)}>
+              <Text style={styles.cancelText}>Cancel</Text>
+            </TouchableOpacity>
+            <Text style={styles.modalTitle}>Add New Product</Text>
+            <TouchableOpacity onPress={handleSaveProduct}>
+              <Text style={styles.saveText}>Save</Text>
+            </TouchableOpacity>
           </View>
           
           <ScrollView style={styles.modalContent} showsVerticalScrollIndicator={false}>
-            <Card variant="outlined" padding="lg" style={styles.formCard}>
-              <Text style={styles.formSectionTitle}>Product Information</Text>
-              
-              <Input
-                label="Product Name *"
-                value={newProductForm.name}
-                onChangeText={(text) => setNewProductForm(prev => ({...prev, name: text}))}
-                placeholder="Enter product name"
-                variant="outlined"
-                leftIcon="cube"
-                style={styles.formInput}
-              />
-              
-              <Input
-                label="SKU *"
-                value={newProductForm.sku}
-                onChangeText={(text) => setNewProductForm(prev => ({...prev, sku: text.toUpperCase()}))}
-                placeholder="Enter SKU (e.g., ABC-123)"
-                variant="outlined"
-                leftIcon="barcode"
-                autoCapitalize="characters"
-                style={styles.formInput}
-              />
-              
-              <Input
-                label="Category *"
-                value={newProductForm.category}
-                onChangeText={(text) => setNewProductForm(prev => ({...prev, category: text}))}
-                placeholder="Enter product category"
-                variant="outlined"
-                leftIcon="folder"
-                style={styles.formInput}
-              />
-            </Card>
-            
-            <Card variant="outlined" padding="lg" style={styles.formCard}>
-              <Text style={styles.formSectionTitle}>Pricing & Inventory</Text>
-              
-              <Input
-                label="Price *"
-                value={newProductForm.price}
-                onChangeText={(text) => setNewProductForm(prev => ({...prev, price: text}))}
-                placeholder="0.00"
-                variant="outlined"
-                leftIcon="cash"
-                keyboardType="numeric"
-                style={styles.formInput}
-              />
-              
-              <Input
-                label="Initial Stock *"
-                value={newProductForm.stock}
-                onChangeText={(text) => setNewProductForm(prev => ({...prev, stock: text}))}
-                placeholder="Enter initial quantity"
-                variant="outlined"
-                leftIcon="cube-outline"
-                keyboardType="numeric"
-                style={styles.formInput}
-              />
-              
-              <Input
-                label="Low Stock Threshold"
-                value={newProductForm.lowStockThreshold}
-                onChangeText={(text) => setNewProductForm(prev => ({...prev, lowStockThreshold: text}))}
-                placeholder="Enter minimum stock level"
-                variant="outlined"
-                leftIcon="warning"
-                keyboardType="numeric"
-                style={styles.formInput}
-              />
-            </Card>
-            
-            <View style={styles.formActions}>
-              <Button
-                title="Cancel"
-                variant="outline"
-                onPress={() => {
-                  HapticFeedback.light();
-                  setShowAddProductModal(false);
-                  resetAddProductForm();
-                }}
-                style={styles.formButton}
-              />
-              <Button
-                title="Add Product"
-                variant="primary"
-                icon="checkmark"
-                onPress={handleSaveNewProduct}
-                style={styles.formButton}
-              />
-            </View>
+            <ModernInput
+              label="Product Name *"
+              value={newProductForm.name}
+              onChangeText={(text) => setNewProductForm(prev => ({ ...prev, name: text }))}
+              placeholder="Enter product name"
+            />
+            <ModernInput
+              label="SKU *"
+              value={newProductForm.sku}
+              onChangeText={(text) => setNewProductForm(prev => ({ ...prev, sku: text }))}
+              placeholder="Enter SKU"
+            />
+            <ModernInput
+              label="Price * ($)"
+              value={newProductForm.price}
+              onChangeText={(text) => setNewProductForm(prev => ({ ...prev, price: text }))}
+              placeholder="0.00"
+              keyboardType="numeric"
+            />
+            <ModernInput
+              label="Cost * ($)"
+              value={newProductForm.cost}
+              onChangeText={(text) => setNewProductForm(prev => ({ ...prev, cost: text }))}
+              placeholder="0.00"
+              keyboardType="numeric"
+            />
+            <ModernInput
+              label="Initial Stock"
+              value={newProductForm.stock}
+              onChangeText={(text) => setNewProductForm(prev => ({ ...prev, stock: text }))}
+              placeholder="0"
+              keyboardType="numeric"
+            />
+            <ModernInput
+              label="Category"
+              value={newProductForm.category}
+              onChangeText={(text) => setNewProductForm(prev => ({ ...prev, category: text }))}
+              placeholder="Enter category"
+            />
+            <ModernInput
+              label="Tax Rate (0-1)"
+              value={newProductForm.taxRate}
+              onChangeText={(text) => setNewProductForm(prev => ({ ...prev, taxRate: text }))}
+              placeholder="0.08"
+              keyboardType="numeric"
+            />
           </ScrollView>
         </SafeAreaView>
       </Modal>
-    </ScrollView>
+    </SafeAreaView>
   );
 };
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: theme.colors.background,
+    backgroundColor: modernTheme.colors.background.secondary,
   },
   header: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'flex-start',
-    padding: theme.spacing.xl,
-    paddingBottom: theme.spacing.lg,
+    alignItems: 'center',
+    padding: getSpacing('lg'),
+    backgroundColor: modernTheme.colors.background.primary,
+    borderBottomWidth: 1,
+    borderBottomColor: modernTheme.colors.border.light,
+  },
+  headerContent: {
+    flex: 1,
   },
   title: {
-    fontSize: theme.fontSize.xxl,
-    fontWeight: theme.fontWeight.bold,
-    color: theme.colors.text,
+    ...getTypography('2xl', 'bold'),
+    color: modernTheme.colors.text.primary,
+    marginBottom: getSpacing('xs'),
   },
   subtitle: {
-    fontSize: theme.fontSize.md,
-    color: theme.colors.textSecondary,
-    marginTop: theme.spacing.xs,
+    ...getTypography('sm', 'regular'),
+    color: modernTheme.colors.text.secondary,
   },
-  statsGrid: {
+  statsContainer: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    gap: theme.spacing.md,
-    paddingHorizontal: theme.spacing.xl,
-    marginBottom: theme.spacing.lg,
+    padding: getSpacing('lg'),
+    gap: getSpacing('md'),
   },
-  statsCard: {
-    flex: isTablet ? 0 : 1,
-    minWidth: isTablet ? 200 : '47%',
-    maxWidth: isTablet ? 250 : '47%',
+  statCard: {
+    flex: 1,
+    minWidth: 150,
+  },
+  statContent: {
     alignItems: 'center',
   },
-  statsHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: theme.spacing.md,
-    position: 'relative',
+  statValue: {
+    ...getTypography('2xl', 'bold'),
+    color: modernTheme.colors.text.primary,
+    marginTop: getSpacing('sm'),
+    marginBottom: getSpacing('xs'),
   },
-  statsIcon: {
-    width: 48,
-    height: 48,
-    borderRadius: theme.borderRadius.md,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  statusIndicator: {
-    position: 'absolute',
-    top: -4,
-    right: -4,
-  },
-  statsValue: {
-    fontSize: theme.fontSize.xl,
-    fontWeight: theme.fontWeight.bold,
-    color: theme.colors.text,
-    marginBottom: theme.spacing.xs,
-  },
-  statsTitle: {
-    fontSize: theme.fontSize.sm,
-    color: theme.colors.textSecondary,
+  statLabel: {
+    ...getTypography('xs', 'regular'),
+    color: modernTheme.colors.text.secondary,
     textAlign: 'center',
   },
-  searchCard: {
-    marginHorizontal: theme.spacing.xl,
-    marginBottom: theme.spacing.lg,
-  },
-  filterButtons: {
-    flexDirection: 'row',
-    gap: theme.spacing.sm,
-    marginTop: theme.spacing.md,
-  },
-  filterButton: {
+  productsContainer: {
     flex: 1,
   },
-  quickActionsCard: {
-    marginHorizontal: theme.spacing.xl,
-    marginBottom: theme.spacing.lg,
-  },
-  quickActionsGrid: {
-    flexDirection: 'row',
-    gap: theme.spacing.md,
-    marginTop: theme.spacing.md,
-  },
-  quickActionButton: {
-    flex: 1,
-  },
-  sectionTitle: {
-    fontSize: theme.fontSize.lg,
-    fontWeight: theme.fontWeight.semibold,
-    color: theme.colors.text,
-  },
-  productList: {
-    paddingHorizontal: theme.spacing.xl,
-    marginBottom: theme.spacing.xl,
-  },
-  productItem: {
-    marginTop: theme.spacing.md,
-  },
-  productHeader: {
+  sectionHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'flex-start',
-    marginBottom: theme.spacing.md,
+    alignItems: 'center',
+    padding: getSpacing('lg'),
+    backgroundColor: modernTheme.colors.background.primary,
+    borderBottomWidth: 1,
+    borderBottomColor: modernTheme.colors.border.light,
+  },
+  sectionTitle: {
+    ...getTypography('lg', 'semibold'),
+    color: modernTheme.colors.text.primary,
+  },
+  productCount: {
+    ...getTypography('sm', 'regular'),
+    color: modernTheme.colors.text.secondary,
+  },
+  productsList: {
+    padding: getSpacing('lg'),
+  },
+  productItem: {
+    marginBottom: getSpacing('md'),
+  },
+  productContent: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
   },
   productInfo: {
     flex: 1,
-    marginRight: theme.spacing.md,
+    marginRight: getSpacing('md'),
   },
   productName: {
-    fontSize: theme.fontSize.md,
-    fontWeight: theme.fontWeight.semibold,
-    color: theme.colors.text,
-    marginBottom: theme.spacing.xs,
+    ...getTypography('md', 'medium'),
+    color: modernTheme.colors.text.primary,
+    marginBottom: getSpacing('xs'),
   },
   productSku: {
-    fontSize: theme.fontSize.sm,
-    color: theme.colors.textSecondary,
-    marginBottom: theme.spacing.xs,
+    ...getTypography('sm', 'regular'),
+    color: modernTheme.colors.text.secondary,
+    marginBottom: getSpacing('xs'),
   },
-  productCategory: {
-    fontSize: theme.fontSize.sm,
-    color: theme.colors.textLight,
+  stockInfo: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  stockText: {
+    ...getTypography('sm', 'medium'),
+    marginLeft: getSpacing('xs'),
   },
   productActions: {
     alignItems: 'flex-end',
   },
   productPrice: {
-    fontSize: theme.fontSize.lg,
-    fontWeight: theme.fontWeight.semibold,
-    color: theme.colors.success,
-    marginBottom: theme.spacing.sm,
+    ...getTypography('lg', 'bold'),
+    color: modernTheme.colors.primary[500],
+    marginBottom: getSpacing('sm'),
   },
-  stockInfo: {
+  actionButtons: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
+    gap: getSpacing('xs'),
   },
-  stockLevel: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    flex: 1,
-  },
-  stockText: {
-    fontSize: theme.fontSize.sm,
-    fontWeight: theme.fontWeight.medium,
-    marginLeft: theme.spacing.xs,
-  },
-  stockWarning: {
-    fontSize: theme.fontSize.sm,
-    color: theme.colors.error,
-    marginLeft: theme.spacing.sm,
-    fontStyle: 'italic',
+  actionButton: {
+    minWidth: 36,
+    minHeight: 36,
   },
   emptyState: {
     alignItems: 'center',
-    paddingVertical: theme.spacing.xl,
-    marginTop: theme.spacing.lg,
+    padding: getSpacing('xl'),
   },
   emptyStateText: {
-    fontSize: theme.fontSize.lg,
-    fontWeight: theme.fontWeight.medium,
-    color: theme.colors.textSecondary,
-    marginTop: theme.spacing.md,
+    ...getTypography('md', 'medium'),
+    color: modernTheme.colors.text.secondary,
+    marginTop: getSpacing('md'),
   },
   emptyStateSubtext: {
-    fontSize: theme.fontSize.md,
-    color: theme.colors.textLight,
-    marginTop: theme.spacing.xs,
+    ...getTypography('sm', 'regular'),
+    color: modernTheme.colors.text.tertiary,
     textAlign: 'center',
+    marginTop: getSpacing('sm'),
+    marginBottom: getSpacing('lg'),
   },
-  // Modal styles
+  emptyStateButton: {
+    minWidth: 200,
+  },
   modalContainer: {
     flex: 1,
-    backgroundColor: theme.colors.background,
+    backgroundColor: modernTheme.colors.background.primary,
   },
   modalHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    padding: theme.spacing.lg,
-    paddingBottom: theme.spacing.md,
+    padding: getSpacing('lg'),
     borderBottomWidth: 1,
-    borderBottomColor: theme.colors.border,
+    borderBottomColor: modernTheme.colors.border.light,
   },
-  modalTitleContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: theme.spacing.sm,
+  cancelText: {
+    fontSize: 16,
+    color: modernTheme.colors.error[500],
   },
   modalTitle: {
-    fontSize: theme.fontSize.xl,
-    fontWeight: theme.fontWeight.bold,
-    color: theme.colors.text,
+    ...getTypography('lg', 'semibold'),
+    color: modernTheme.colors.text.primary,
+  },
+  saveText: {
+    fontSize: 16,
+    color: modernTheme.colors.primary[500],
+    fontWeight: 'bold',
   },
   modalContent: {
     flex: 1,
-    padding: theme.spacing.lg,
+    padding: getSpacing('lg'),
   },
-  formCard: {
-    marginBottom: theme.spacing.lg,
-  },
-  formSectionTitle: {
-    fontSize: theme.fontSize.lg,
-    fontWeight: theme.fontWeight.semibold,
-    color: theme.colors.text,
-    marginBottom: theme.spacing.md,
-  },
-  formInput: {
-    marginBottom: theme.spacing.md,
-  },
-  formActions: {
-    flexDirection: 'row',
-    gap: theme.spacing.md,
-    paddingTop: theme.spacing.lg,
-    paddingBottom: theme.spacing.xl,
-  },
-  formButton: {
-    flex: 1,
+  flatListContent: {
+    paddingBottom: getSpacing('lg'),
   },
 });

@@ -1,295 +1,310 @@
-import React from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Share, Alert } from 'react-native';
-import { Sale, CartItem } from '../services/SimpleSalesService';
+import React, { useState, useEffect } from 'react';
+import {
+  View,
+  Text,
+  StyleSheet,
+  ScrollView,
+  TouchableOpacity,
+  Alert,
+  Share,
+  Modal,
+  ActivityIndicator,
+} from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
+import { theme } from '../styles/theme';
+import { businessConfigService } from '../services/BusinessConfigService';
+
+interface ReceiptItem {
+  name: string;
+  sku: string;
+  quantity: number;
+  unitPrice: number;
+  total: number;
+  tax: number;
+}
+
+interface ReceiptData {
+  saleId: number;
+  timestamp: string;
+  items: ReceiptItem[];
+  subtotal: number;
+  totalTax: number;
+  grandTotal: number;
+  paymentMethod: string;
+  paymentAmount: number;
+  change: number;
+}
 
 interface ReceiptGeneratorProps {
-  sale: Sale;
+  sale: any; // SaleResult from SalesService
   onClose: () => void;
-  onPrint?: () => void;
-  onEmail?: (email: string) => void;
 }
 
 export const ReceiptGenerator: React.FC<ReceiptGeneratorProps> = ({
   sale,
   onClose,
-  onPrint,
-  onEmail
 }) => {
-  const formatDateTime = (dateTime: Date): string => {
-    return dateTime.toLocaleString('en-US', {
-      year: 'numeric',
-      month: '2-digit',
-      day: '2-digit',
-      hour: '2-digit',
-      minute: '2-digit',
-      second: '2-digit'
-    });
-  };
+  const [businessInfo, setBusinessInfo] = useState<any>(null);
+  const [loading, setLoading] = useState(true);
+  const [receiptData, setReceiptData] = useState<ReceiptData | null>(null);
 
-  const generateReceiptText = (): string => {
-    const divider = '================================';
-    const smallDivider = '--------------------------------';
-    
-    let receipt = `
-${divider}
-         SALES RECEIPT
-${divider}
+  useEffect(() => {
+    initializeReceipt();
+  }, [sale]);
 
-Receipt #: ${sale.id}
-Date: ${formatDateTime(sale.timestamp)}
-Cashier: ${sale.cashier || 'System'}
+  const initializeReceipt = async () => {
+    try {
+      setLoading(true);
+      
+      // Load business info
+      const business = await businessConfigService.getBusinessInfo();
+      setBusinessInfo(business);
 
-${smallDivider}
-           ITEMS
-${smallDivider}
-`;
+      // Extract receipt data from sale
+      if (sale && sale.receiptData) {
+        setReceiptData(sale.receiptData);
+      } else {
+        // Fallback: create receipt data from sale
+        const items: ReceiptItem[] = sale.saleItems?.map((item: any) => ({
+          name: item.product?.name || 'Unknown Product',
+          sku: item.product?.sku || 'N/A',
+          quantity: item.qty,
+          unitPrice: item.unit_price,
+          total: item.qty * item.unit_price,
+          tax: (item.qty * item.unit_price) * 0.08, // Default tax rate
+        })) || [];
 
-    // Add each item
-    sale.items.forEach((item: CartItem) => {
-      const itemTotal = item.price * item.quantity;
-      receipt += `${item.name}\n`;
-      receipt += `  ${item.quantity} x $${item.price.toFixed(2)} = $${itemTotal.toFixed(2)}\n`;
-      if (item.sku) {
-        receipt += `  SKU: ${item.sku}\n`;
+        const subtotal = items.reduce((sum, item) => sum + item.total, 0);
+        const totalTax = items.reduce((sum, item) => sum + item.tax, 0);
+        const grandTotal = sale.sale?.total || subtotal + totalTax;
+        const paymentAmount = sale.payments?.[0]?.amount || grandTotal;
+        const change = Math.max(0, paymentAmount - grandTotal);
+
+        setReceiptData({
+          saleId: sale.sale?.id || 0,
+          timestamp: sale.sale?.timestamp || new Date().toISOString(),
+          items,
+          subtotal,
+          totalTax,
+          grandTotal,
+          paymentMethod: sale.payments?.[0]?.method || 'cash',
+          paymentAmount,
+          change
+        });
       }
-      receipt += '\n';
-    });
-
-    // Add totals
-    receipt += `${smallDivider}
-Subtotal: $${sale.subtotal.toFixed(2)}`;
-
-    if (sale.tax > 0) {
-      receipt += `\nTax: $${sale.tax.toFixed(2)}`;
+    } catch (error) {
+      Alert.alert('Error', 'Failed to generate receipt');
+    } finally {
+      setLoading(false);
     }
-
-    if (sale.discount > 0) {
-      receipt += `\nDiscount: -$${sale.discount.toFixed(2)}`;
-    }
-
-    receipt += `\nTOTAL: $${sale.total.toFixed(2)}
-
-${smallDivider}
-           PAYMENT
-${smallDivider}
-Payment Method: ${sale.paymentMethod.toUpperCase()}`;
-
-    if (sale.paymentMethod === 'cash') {
-      receipt += `\nCash Received: $${sale.amountPaid.toFixed(2)}`;
-      const change = sale.amountPaid - sale.total;
-      if (change > 0) {
-        receipt += `\nChange: $${change.toFixed(2)}`;
-      }
-    } else {
-      receipt += `\nAmount Charged: $${sale.amountPaid.toFixed(2)}`;
-    }
-
-    receipt += `\n\n${divider}
-     Thank you for your business!
-         Please come again!
-${divider}
-`;
-
-    return receipt;
   };
 
   const handleShare = async () => {
+    if (!receiptData) {
+      return;
+    }
+
     try {
       const receiptText = generateReceiptText();
       await Share.share({
         message: receiptText,
-        title: `Receipt #${sale.id}`
+        title: 'Receipt'
       });
     } catch (error) {
-      Alert.alert('Share Error', 'Failed to share receipt');
+      Alert.alert('Error', 'Failed to share receipt');
     }
   };
 
-  const handlePrint = () => {
-    if (onPrint) {
-      onPrint();
-    } else {
-      Alert.alert('Print', 'Print functionality not implemented');
+  const generateReceiptText = (): string => {
+    if (!receiptData || !businessInfo) {
+      return '';
     }
+
+    let text = `${businessInfo.businessName || 'Your Business'}\n`;
+    text += `${businessInfo.businessAddress || 'Business Address'}\n`;
+    text += `Phone: ${businessInfo.businessPhone || 'N/A'}\n`;
+    text += `Email: ${businessInfo.businessEmail || 'N/A'}\n`;
+    text += `\nReceipt #${receiptData.saleId}\n`;
+    text += `Date: ${new Date(receiptData.timestamp).toLocaleString()}\n`;
+    text += `\nItems:\n`;
+    text += `--------------------------------\n`;
+    
+    receiptData.items.forEach(item => {
+      text += `${item.name}\n`;
+      text += `  ${item.quantity} x $${item.unitPrice.toFixed(2)} = $${item.total.toFixed(2)}\n`;
+    });
+    
+    text += `\n--------------------------------\n`;
+    text += `Subtotal: $${receiptData.subtotal.toFixed(2)}\n`;
+    text += `Tax: $${receiptData.totalTax.toFixed(2)}\n`;
+    text += `Total: $${receiptData.grandTotal.toFixed(2)}\n`;
+    text += `Payment Method: ${receiptData.paymentMethod.toUpperCase()}\n`;
+    text += `Amount Paid: $${receiptData.paymentAmount.toFixed(2)}\n`;
+    if (receiptData.change > 0) {
+      text += `Change: $${receiptData.change.toFixed(2)}\n`;
+    }
+    text += `\nThank you for choosing our products!\n`;
+    text += `We appreciate your business.\n`;
+    text += `Please visit us again!\n`;
+    
+    return text;
   };
 
-  const handleEmail = () => {
-    if (onEmail) {
-      Alert.prompt(
-        'Email Receipt',
-        'Enter email address:',
-        [
-          { text: 'Cancel', style: 'cancel' },
-          {
-            text: 'Send',
-            onPress: (email) => {
-              if (email && email.includes('@')) {
-                onEmail(email);
-              } else {
-                Alert.alert('Invalid Email', 'Please enter a valid email address');
-              }
-            }
-          }
-        ],
-        'plain-text'
-      );
-    } else {
-      Alert.alert('Email', 'Email functionality not implemented');
-    }
-  };
+  if (loading) {
+    return (
+      <Modal visible={true} animationType="slide" presentationStyle="pageSheet">
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color={theme.colors.primary} />
+          <Text style={styles.loadingText}>Generating Receipt...</Text>
+        </View>
+      </Modal>
+    );
+  }
+
+  if (!receiptData || !businessInfo) {
+    return (
+      <Modal visible={true} animationType="slide" presentationStyle="pageSheet">
+        <View style={styles.errorContainer}>
+          <Ionicons name="alert-circle" size={48} color={theme.colors.error} />
+          <Text style={styles.errorText}>Failed to generate receipt</Text>
+          <TouchableOpacity style={styles.closeButton} onPress={onClose}>
+            <Text style={styles.closeButtonText}>Close</Text>
+          </TouchableOpacity>
+        </View>
+      </Modal>
+    );
+  }
 
   return (
-    <View style={styles.container}>
-      <View style={styles.header}>
-        <Text style={styles.title}>Receipt</Text>
-        <TouchableOpacity onPress={onClose}>
-          <Text style={styles.closeButton}>✕</Text>
-        </TouchableOpacity>
-      </View>
+    <Modal visible={true} animationType="slide" presentationStyle="pageSheet">
+      <View style={styles.container}>
+        {/* Header */}
+        <View style={styles.header}>
+          <TouchableOpacity onPress={onClose} style={styles.closeButton}>
+            <Ionicons name="close" size={24} color={theme.colors.text} />
+          </TouchableOpacity>
+          <Text style={styles.headerTitle}>Receipt</Text>
+          <TouchableOpacity onPress={handleShare} style={styles.shareButton}>
+            <Ionicons name="share-outline" size={24} color={theme.colors.primary} />
+          </TouchableOpacity>
+        </View>
 
-      <ScrollView style={styles.receiptContainer} showsVerticalScrollIndicator={false}>
-        <View style={styles.receipt}>
-          {/* Store Header */}
-          <View style={styles.storeHeader}>
-            <Text style={styles.storeName}>SALES MVP</Text>
-            <Text style={styles.storeInfo}>Point of Sale System</Text>
+        {/* Receipt Content */}
+        <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
+          {/* Business Information */}
+          <View style={styles.businessSection}>
+            <Text style={styles.businessName}>{businessInfo.businessName || 'Your Business'}</Text>
+            <Text style={styles.businessAddress}>{businessInfo.businessAddress || 'Business Address'}</Text>
+            <Text style={styles.businessContact}>
+              Phone: {businessInfo.businessPhone || 'N/A'} | Email: {businessInfo.businessEmail || 'N/A'}
+            </Text>
           </View>
 
-          {/* Receipt Info */}
-          <View style={styles.receiptInfo}>
-            <View style={styles.infoRow}>
-              <Text style={styles.infoLabel}>Receipt #:</Text>
-              <Text style={styles.infoValue}>{sale.id}</Text>
-            </View>
-            <View style={styles.infoRow}>
-              <Text style={styles.infoLabel}>Date:</Text>
-              <Text style={styles.infoValue}>{formatDateTime(sale.timestamp)}</Text>
-            </View>
-            {sale.cashier && (
-              <View style={styles.infoRow}>
-                <Text style={styles.infoLabel}>Cashier:</Text>
-                <Text style={styles.infoValue}>{sale.cashier}</Text>
-              </View>
-            )}
+          {/* Receipt Details */}
+          <View style={styles.receiptDetails}>
+            <Text style={styles.receiptNumber}>Receipt #{receiptData.saleId}</Text>
+            <Text style={styles.receiptDate}>
+              {new Date(receiptData.timestamp).toLocaleString()}
+            </Text>
           </View>
 
-          {/* Items */}
-          <View style={styles.divider} />
-          <Text style={styles.sectionTitle}>ITEMS</Text>
-          <View style={styles.divider} />
-
-          {sale.items.map((item: CartItem, index: number) => {
-            const itemTotal = item.price * item.quantity;
-            return (
-              <View key={index} style={styles.item}>
-                <View style={styles.itemHeader}>
+          {/* Items Table */}
+          <View style={styles.itemsSection}>
+            <Text style={styles.sectionTitle}>Items</Text>
+            <View style={styles.tableHeader}>
+              <Text style={styles.headerItem}>Item</Text>
+              <Text style={styles.headerQty}>Qty</Text>
+              <Text style={styles.headerPrice}>Price</Text>
+              <Text style={styles.headerTotal}>Total</Text>
+            </View>
+            
+            {receiptData.items.map((item, index) => (
+              <View key={index} style={styles.tableRow}>
+                <View style={styles.itemInfo}>
                   <Text style={styles.itemName}>{item.name}</Text>
-                  <Text style={styles.itemTotal}>${itemTotal.toFixed(2)}</Text>
+                  <Text style={styles.itemSku}>SKU: {item.sku}</Text>
                 </View>
-                <View style={styles.itemDetails}>
-                  <Text style={styles.itemQuantity}>
-                    {item.quantity} × ${item.price.toFixed(2)}
-                  </Text>
-                  {item.sku && (
-                    <Text style={styles.itemSku}>SKU: {item.sku}</Text>
-                  )}
-                </View>
+                <Text style={styles.itemQty}>{item.quantity}</Text>
+                <Text style={styles.itemPrice}>${item.unitPrice.toFixed(2)}</Text>
+                <Text style={styles.itemTotal}>${item.total.toFixed(2)}</Text>
               </View>
-            );
-          })}
+            ))}
+          </View>
 
           {/* Totals */}
-          <View style={styles.divider} />
-          <View style={styles.totals}>
+          <View style={styles.totalsSection}>
             <View style={styles.totalRow}>
               <Text style={styles.totalLabel}>Subtotal:</Text>
-              <Text style={styles.totalValue}>${sale.subtotal.toFixed(2)}</Text>
+              <Text style={styles.totalValue}>${receiptData.subtotal.toFixed(2)}</Text>
             </View>
-
-            {sale.tax > 0 && (
+            <View style={styles.totalRow}>
+              <Text style={styles.totalLabel}>Tax:</Text>
+              <Text style={styles.totalValue}>${receiptData.totalTax.toFixed(2)}</Text>
+            </View>
+            <View style={styles.totalRow}>
+              <Text style={styles.grandTotalLabel}>Total:</Text>
+              <Text style={styles.grandTotalValue}>${receiptData.grandTotal.toFixed(2)}</Text>
+            </View>
+            <View style={styles.totalRow}>
+              <Text style={styles.totalLabel}>Payment Method:</Text>
+              <Text style={styles.totalValue}>{receiptData.paymentMethod.toUpperCase()}</Text>
+            </View>
+            <View style={styles.totalRow}>
+              <Text style={styles.totalLabel}>Amount Paid:</Text>
+              <Text style={styles.totalValue}>${receiptData.paymentAmount.toFixed(2)}</Text>
+            </View>
+            {receiptData.change > 0 && (
               <View style={styles.totalRow}>
-                <Text style={styles.totalLabel}>Tax:</Text>
-                <Text style={styles.totalValue}>${sale.tax.toFixed(2)}</Text>
-              </View>
-            )}
-
-            {sale.discount > 0 && (
-              <View style={styles.totalRow}>
-                <Text style={styles.totalLabel}>Discount:</Text>
-                <Text style={styles.totalValue}>-${sale.discount.toFixed(2)}</Text>
-              </View>
-            )}
-
-            <View style={[styles.totalRow, styles.grandTotal]}>
-              <Text style={styles.grandTotalLabel}>TOTAL:</Text>
-              <Text style={styles.grandTotalValue}>${sale.total.toFixed(2)}</Text>
-            </View>
-          </View>
-
-          {/* Payment */}
-          <View style={styles.divider} />
-          <Text style={styles.sectionTitle}>PAYMENT</Text>
-          <View style={styles.divider} />
-
-          <View style={styles.payment}>
-            <View style={styles.paymentRow}>
-              <Text style={styles.paymentLabel}>Method:</Text>
-              <Text style={styles.paymentValue}>{sale.paymentMethod.toUpperCase()}</Text>
-            </View>
-
-            {sale.paymentMethod === 'cash' ? (
-              <>
-                <View style={styles.paymentRow}>
-                  <Text style={styles.paymentLabel}>Cash Received:</Text>
-                  <Text style={styles.paymentValue}>${sale.amountPaid.toFixed(2)}</Text>
-                </View>
-                {sale.amountPaid > sale.total && (
-                  <View style={styles.paymentRow}>
-                    <Text style={styles.paymentLabel}>Change:</Text>
-                    <Text style={styles.changeValue}>
-                      ${(sale.amountPaid - sale.total).toFixed(2)}
-                    </Text>
-                  </View>
-                )}
-              </>
-            ) : (
-              <View style={styles.paymentRow}>
-                <Text style={styles.paymentLabel}>Amount Charged:</Text>
-                <Text style={styles.paymentValue}>${sale.amountPaid.toFixed(2)}</Text>
+                <Text style={styles.totalLabel}>Change:</Text>
+                <Text style={styles.totalValue}>${receiptData.change.toFixed(2)}</Text>
               </View>
             )}
           </View>
 
-          {/* Footer */}
-          <View style={styles.footer}>
-            <Text style={styles.footerText}>Thank you for your business!</Text>
-            <Text style={styles.footerText}>Please come again!</Text>
+          {/* Thank You Message */}
+          <View style={styles.thankYouSection}>
+            <Text style={styles.thankYouTitle}>Thank you for choosing our products!</Text>
+            <Text style={styles.thankYouMessage}>
+              We appreciate your business and hope you had a great shopping experience.
+            </Text>
+            <Text style={styles.thankYouMessage}>
+              Please visit us again soon!
+            </Text>
           </View>
-        </View>
-      </ScrollView>
-
-      {/* Action Buttons */}
-      <View style={styles.actions}>
-        <TouchableOpacity style={styles.actionButton} onPress={handleShare}>
-          <Text style={styles.actionButtonText}>📤 Share</Text>
-        </TouchableOpacity>
-        
-        <TouchableOpacity style={styles.actionButton} onPress={handlePrint}>
-          <Text style={styles.actionButtonText}>🖨️ Print</Text>
-        </TouchableOpacity>
-        
-        <TouchableOpacity style={styles.actionButton} onPress={handleEmail}>
-          <Text style={styles.actionButtonText}>📧 Email</Text>
-        </TouchableOpacity>
+        </ScrollView>
       </View>
-    </View>
+    </Modal>
   );
 };
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#fff',
+    backgroundColor: theme.colors.background,
+  },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: theme.colors.background,
+  },
+  loadingText: {
+    marginTop: 16,
+    fontSize: 16,
+    color: theme.colors.textSecondary,
+  },
+  errorContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: theme.colors.background,
+    padding: 20,
+  },
+  errorText: {
+    marginTop: 16,
+    fontSize: 16,
+    color: theme.colors.error,
+    textAlign: 'center',
   },
   header: {
     flexDirection: 'row',
@@ -297,192 +312,197 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     padding: 20,
     borderBottomWidth: 1,
-    borderBottomColor: '#e9ecef',
+    borderBottomColor: theme.colors.border,
+    backgroundColor: theme.colors.surface,
   },
-  title: {
-    fontSize: 20,
+  headerTitle: {
+    fontSize: 18,
     fontWeight: 'bold',
-    color: '#333',
+    color: theme.colors.text,
   },
   closeButton: {
-    fontSize: 24,
-    color: '#666',
-    padding: 5,
+    padding: 8,
   },
-  receiptContainer: {
+  shareButton: {
+    padding: 8,
+  },
+  content: {
     flex: 1,
     padding: 20,
   },
-  receipt: {
-    backgroundColor: '#fff',
-    borderWidth: 1,
-    borderColor: '#ddd',
-    borderRadius: 8,
-    padding: 20,
-    marginBottom: 20,
-  },
-  storeHeader: {
+  businessSection: {
     alignItems: 'center',
-    marginBottom: 20,
+    marginBottom: 24,
+    paddingBottom: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: theme.colors.border,
   },
-  storeName: {
-    fontSize: 24,
+  businessName: {
+    fontSize: 20,
     fontWeight: 'bold',
-    color: '#333',
+    color: theme.colors.text,
     textAlign: 'center',
-  },
-  storeInfo: {
-    fontSize: 14,
-    color: '#666',
-    textAlign: 'center',
-    marginTop: 4,
-  },
-  receiptInfo: {
-    marginBottom: 20,
-  },
-  infoRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
     marginBottom: 4,
   },
-  infoLabel: {
+  businessAddress: {
     fontSize: 14,
-    color: '#666',
+    color: theme.colors.textSecondary,
+    textAlign: 'center',
+    marginBottom: 4,
   },
-  infoValue: {
+  businessContact: {
+    fontSize: 12,
+    color: theme.colors.textSecondary,
+    textAlign: 'center',
+  },
+  receiptDetails: {
+    alignItems: 'center',
+    marginBottom: 24,
+  },
+  receiptNumber: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: theme.colors.text,
+    marginBottom: 4,
+  },
+  receiptDate: {
     fontSize: 14,
-    color: '#333',
-    fontWeight: '500',
+    color: theme.colors.textSecondary,
   },
-  divider: {
-    height: 1,
-    backgroundColor: '#ddd',
-    marginVertical: 15,
+  itemsSection: {
+    marginBottom: 24,
   },
   sectionTitle: {
     fontSize: 16,
     fontWeight: 'bold',
-    color: '#333',
-    textAlign: 'center',
-    marginBottom: 10,
+    color: theme.colors.text,
+    marginBottom: 12,
   },
-  item: {
-    marginBottom: 15,
-  },
-  itemHeader: {
+  tableHeader: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
+    paddingVertical: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: theme.colors.border,
+    marginBottom: 8,
+  },
+  headerItem: {
+    flex: 2,
+    fontSize: 12,
+    fontWeight: 'bold',
+    color: theme.colors.textSecondary,
+  },
+  headerQty: {
+    flex: 1,
+    fontSize: 12,
+    fontWeight: 'bold',
+    color: theme.colors.textSecondary,
+    textAlign: 'center',
+  },
+  headerPrice: {
+    flex: 1,
+    fontSize: 12,
+    fontWeight: 'bold',
+    color: theme.colors.textSecondary,
+    textAlign: 'right',
+  },
+  headerTotal: {
+    flex: 1,
+    fontSize: 12,
+    fontWeight: 'bold',
+    color: theme.colors.textSecondary,
+    textAlign: 'right',
+  },
+  tableRow: {
+    flexDirection: 'row',
     alignItems: 'center',
+    paddingVertical: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: theme.colors.borderLight,
+  },
+  itemInfo: {
+    flex: 2,
   },
   itemName: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#333',
-    flex: 1,
-  },
-  itemTotal: {
-    fontSize: 16,
-    fontWeight: 'bold',
-    color: '#333',
-  },
-  itemDetails: {
-    marginTop: 4,
-  },
-  itemQuantity: {
     fontSize: 14,
-    color: '#666',
+    fontWeight: '500',
+    color: theme.colors.text,
+    marginBottom: 2,
   },
   itemSku: {
     fontSize: 12,
-    color: '#999',
-    marginTop: 2,
+    color: theme.colors.textSecondary,
   },
-  totals: {
-    marginTop: 10,
+  itemQty: {
+    flex: 1,
+    fontSize: 14,
+    color: theme.colors.text,
+    textAlign: 'center',
+  },
+  itemPrice: {
+    flex: 1,
+    fontSize: 14,
+    color: theme.colors.text,
+    textAlign: 'right',
+  },
+  itemTotal: {
+    flex: 1,
+    fontSize: 14,
+    fontWeight: '500',
+    color: theme.colors.text,
+    textAlign: 'right',
+  },
+  totalsSection: {
+    marginBottom: 24,
+    paddingTop: 16,
+    borderTopWidth: 1,
+    borderTopColor: theme.colors.border,
   },
   totalRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    marginBottom: 6,
+    alignItems: 'center',
+    paddingVertical: 4,
   },
   totalLabel: {
     fontSize: 14,
-    color: '#666',
+    color: theme.colors.textSecondary,
   },
   totalValue: {
     fontSize: 14,
-    color: '#333',
-  },
-  grandTotal: {
-    marginTop: 10,
-    paddingTop: 10,
-    borderTopWidth: 1,
-    borderTopColor: '#ddd',
+    color: theme.colors.text,
   },
   grandTotalLabel: {
-    fontSize: 18,
+    fontSize: 16,
     fontWeight: 'bold',
-    color: '#333',
+    color: theme.colors.text,
   },
   grandTotalValue: {
-    fontSize: 20,
+    fontSize: 16,
     fontWeight: 'bold',
-    color: '#27ae60',
+    color: theme.colors.primary,
   },
-  payment: {
-    marginTop: 10,
-  },
-  paymentRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginBottom: 6,
-  },
-  paymentLabel: {
-    fontSize: 14,
-    color: '#666',
-  },
-  paymentValue: {
-    fontSize: 14,
-    color: '#333',
-    fontWeight: '500',
-  },
-  changeValue: {
-    fontSize: 14,
-    color: '#27ae60',
-    fontWeight: 'bold',
-  },
-  footer: {
+  thankYouSection: {
     alignItems: 'center',
-    marginTop: 30,
-    paddingTop: 20,
+    paddingTop: 24,
     borderTopWidth: 1,
-    borderTopColor: '#ddd',
+    borderTopColor: theme.colors.border,
   },
-  footerText: {
+  thankYouTitle: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: theme.colors.text,
+    textAlign: 'center',
+    marginBottom: 8,
+  },
+  thankYouMessage: {
     fontSize: 14,
-    color: '#666',
+    color: theme.colors.textSecondary,
     textAlign: 'center',
     marginBottom: 4,
   },
-  actions: {
-    flexDirection: 'row',
-    padding: 20,
-    gap: 15,
-    borderTopWidth: 1,
-    borderTopColor: '#e9ecef',
-  },
-  actionButton: {
-    flex: 1,
-    backgroundColor: '#f8f9fa',
-    padding: 15,
-    borderRadius: 8,
-    alignItems: 'center',
-    borderWidth: 1,
-    borderColor: '#e9ecef',
-  },
-  actionButtonText: {
-    fontSize: 14,
-    color: '#495057',
-    fontWeight: '600',
+  closeButtonText: {
+    fontSize: 16,
+    color: theme.colors.primary,
+    fontWeight: 'bold',
   },
 });

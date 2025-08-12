@@ -17,14 +17,23 @@
     ],
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.salesmvp.app"
+      "bundleIdentifier": "com.salesmvp.app",
+      "infoPlist": {
+        "NSPhotoLibraryUsageDescription": "The app accesses your photos to let you update your profile avatar and business logo.",
+        "NSCameraUsageDescription": "The app accesses your camera to let you take photos for your profile."
+      }
     },
     "android": {
       "adaptiveIcon": {
         "foregroundImage": "./assets/images/adaptive-icon.png",
         "backgroundColor": "#6C63FF"
       },
-      "package": "com.salesmvp.app"
+      "package": "com.salesmvp.app",
+      "permissions": [
+        "android.permission.CAMERA",
+        "android.permission.READ_EXTERNAL_STORAGE",
+        "android.permission.WRITE_EXTERNAL_STORAGE"
+      ]
     },
     "web": {
       "bundler": "metro",
@@ -34,14 +43,23 @@
     "plugins": [
       "expo-router",
       "expo-font",
-      "expo-web-browser"
+      "expo-web-browser",
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "The app accesses your photos to let you share them with your friends.",
+          "cameraPermission": "The app accesses your camera to let you take photos."
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true
     },
-    "runtimeVersion": "1.0.0",
-    "updates": {
-      "fallbackToCacheTimeout": 0
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "cac537c3-2bab-494e-89bf-973e5ed3f1e5"
+      }
     }
   }
 }

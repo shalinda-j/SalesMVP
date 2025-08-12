@@ -171,7 +171,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   };
 
   const hasPermission = (permission: keyof UserPermissions): boolean => {
-    if (!state.permissions) return false;
+    if (!state.permissions) {return false;}
     return state.permissions[permission] || false;
   };
 

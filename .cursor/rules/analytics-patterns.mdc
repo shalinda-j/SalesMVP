@@ -1,0 +1,190 @@
+# Analytics and Reporting Patterns
+
+## Analytics Architecture
+
+### Analytics Service
+[AnalyticsService.ts](mdc:src/services/AnalyticsService.ts) provides:
+- Sales analytics and metrics calculation
+- Product performance analysis
+- Financial reporting and insights
+- Time-based data aggregation
+
+### Analytics Dashboard
+[AnalyticsDashboard.tsx](mdc:src/components/AnalyticsDashboard.tsx) offers:
+- Real-time data visualization
+- Interactive charts and graphs
+- KPI monitoring and alerts
+- Customizable reporting views
+
+## Key Analytics Features
+
+### Sales Analytics
+[src/screens/reports/AnalyticsScreen.tsx](mdc:src/screens/reports/AnalyticsScreen.tsx) provides:
+- Total sales and revenue tracking
+- Average transaction values
+- Sales trends over time
+- Peak sales period identification
+
+### Product Analytics
+- Top-selling products ranking
+- Product performance metrics
+- Profit margin analysis
+- Inventory turnover rates
+- Low-performing product identification
+
+### Financial Analytics
+- Gross profit calculations
+- Net margin analysis
+- ROI tracking
+- Cost of goods sold (COGS)
+- Revenue growth trends
+
+### Inventory Analytics
+- Stock level monitoring
+- Low stock alerts
+- Out-of-stock tracking
+- Inventory value calculations
+- Reorder point optimization
+
+## Data Visualization
+
+### Charts and Graphs
+[SalesChart.tsx](mdc:src/components/SalesChart.tsx) provides:
+- Line charts for trend analysis
+- Bar charts for comparison
+- Pie charts for distribution
+- Real-time data updates
+
+### KPI Metrics
+- Revenue growth percentage
+- Sales volume trends
+- Customer acquisition metrics
+- Product performance scores
+- Inventory efficiency ratios
+
+## Time-based Analytics
+
+### Period Analysis
+- Daily sales summaries
+- Weekly performance reports
+- Monthly trend analysis
+- Year-over-year comparisons
+- Seasonal pattern identification
+
+### Real-time Monitoring
+- Live sales tracking
+- Current day performance
+- Hourly sales breakdown
+- Peak activity identification
+
+## Analytics Data Types
+
+### Sales Data
+```typescript
+interface SalesAnalytics {
+  totalSales: number;
+  totalRevenue: number;
+  averageTransaction: number;
+  salesByDay: Array<{ date: string; sales: number; revenue: number }>;
+}
+```
+
+### Product Performance
+```typescript
+interface ProductAnalytics {
+  product_id: number;
+  product_name: string;
+  total_sold: number;
+  total_revenue: number;
+  profit_margin: number;
+  rank: number;
+}
+```
+
+### Financial Metrics
+```typescript
+interface FinancialAnalytics {
+  total_revenue: number;
+  gross_profit: number;
+  net_margin: number;
+  roi: number;
+}
+```
+
+## Reporting Features
+
+### Automated Reports
+- Daily sales summaries
+- Weekly performance reports
+- Monthly financial statements
+- Quarterly business reviews
+
+### Custom Reports
+- Date range selection
+- Product category filtering
+- Payment method analysis
+- Customer segment insights
+
+### Export Capabilities
+- PDF report generation
+- CSV data export
+- Email report delivery
+- Cloud storage integration
+
+## Performance Optimization
+
+### Data Aggregation
+- Pre-calculated metrics
+- Cached analytics data
+- Incremental updates
+- Background processing
+
+### Query Optimization
+- Efficient database queries
+- Indexed analytics tables
+- Partitioned data storage
+- Query result caching
+
+## Business Intelligence
+
+### Predictive Analytics
+- Sales forecasting
+- Inventory demand prediction
+- Customer behavior analysis
+- Trend identification
+
+### Actionable Insights
+- Performance recommendations
+- Optimization suggestions
+- Risk identification
+- Opportunity detection
+
+## Best Practices
+
+### Data Accuracy
+- Validate all input data
+- Implement data quality checks
+- Maintain data consistency
+- Regular data audits
+
+### Performance
+- Optimize query performance
+- Implement proper caching
+- Use efficient algorithms
+- Monitor system resources
+
+### User Experience
+- Intuitive data visualization
+- Responsive design
+- Fast loading times
+- Clear data presentation
+
+### Security
+- Secure data access
+- Role-based permissions
+- Data encryption
+- Audit logging
+description:
+globs:
+alwaysApply: false
+---

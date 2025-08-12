@@ -13,6 +13,7 @@ interface CardProps {
   padding?: 'none' | 'sm' | 'md' | 'lg';
   style?: ViewStyle;
   onPress?: () => void;
+  testID?: string;
 }
 
 export const Card: React.FC<CardProps> = ({
@@ -21,6 +22,7 @@ export const Card: React.FC<CardProps> = ({
   padding = 'md',
   style,
   onPress,
+  testID,
 }) => {
   const cardStyles = [
     styles.card,
@@ -35,13 +37,14 @@ export const Card: React.FC<CardProps> = ({
         style={cardStyles}
         onPress={onPress}
         activeOpacity={0.95}
+        testID={testID}
       >
         {children}
       </TouchableOpacity>
     );
   }
 
-  return <View style={cardStyles}>{children}</View>;
+  return <View style={cardStyles} testID={testID}>{children}</View>;
 };
 
 const styles = StyleSheet.create({

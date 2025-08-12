@@ -1,0 +1,156 @@
+# POS Features and Patterns
+
+## Core POS Components
+
+### Main POS Interface
+[ModernPOSInterface.tsx](mdc:src/components/ModernPOSInterface.tsx) provides:
+- Product scanning and selection
+- Cart management and item modification
+- Payment processing
+- Receipt generation
+- Real-time total calculation
+
+### Barcode Scanning
+[BarcodeScanner.tsx](mdc:src/components/BarcodeScanner.tsx) handles:
+- Camera-based barcode detection
+- Multiple barcode format support
+- Real-time scanning feedback
+- Error handling for invalid codes
+
+### Product Management
+[ProductForm.tsx](mdc:src/components/ProductForm.tsx) offers:
+- Product creation and editing
+- SKU and pricing management
+- Inventory tracking
+- Category organization
+
+## Sales Processing Flow
+
+### 1. Product Scanning
+- Use barcode scanner to identify products
+- Auto-populate product details from database
+- Handle invalid or missing products gracefully
+
+### 2. Cart Management
+- Add/remove items from current sale
+- Modify quantities and prices
+- Calculate subtotals and taxes
+- Apply discounts if applicable
+
+### 3. Payment Processing
+- Support multiple payment methods (cash, card, digital)
+- Calculate change for cash payments
+- Generate payment references
+- Handle payment failures
+
+### 4. Sale Completion
+- Create sale record in database
+- Update inventory levels
+- Generate receipt/invoice
+- Clear cart for next transaction
+
+## Key POS Features
+
+### Real-time Calculations
+- Automatic tax calculation based on product tax rates
+- Running totals and subtotals
+- Change calculation for cash payments
+- Discount application
+
+### Inventory Integration
+- Real-time stock level checking
+- Low stock warnings
+- Out-of-stock handling
+- Automatic inventory updates after sales
+
+### Receipt Generation
+[ReceiptGenerator.tsx](mdc:src/components/ReceiptGenerator.tsx) provides:
+- Professional receipt formatting
+- Itemized line items
+- Tax breakdown
+- Payment method details
+- Store information
+
+### Payment Methods
+[PaymentProcessor.tsx](mdc:src/components/PaymentProcessor.tsx) supports:
+- Cash payments with change calculation
+- Card payments (future integration)
+- Digital payments (future integration)
+- Split payments across methods
+
+## POS State Management
+
+### Sale State
+```typescript
+interface POSState {
+  currentSale: {
+    items: SaleItem[];
+    total: number;
+    tax_total: number;
+    discount?: number;
+  };
+  isScanning: boolean;
+  error: string | null;
+  loading: boolean;
+}
+```
+
+### Cart Operations
+- Add item to cart
+- Remove item from cart
+- Update item quantity
+- Clear entire cart
+- Apply discounts
+
+## Error Handling
+
+### Common POS Errors
+- Invalid barcode
+- Product not found
+- Insufficient stock
+- Payment processing failure
+- Network connectivity issues
+
+### User Feedback
+- Clear error messages
+- Loading indicators
+- Success confirmations
+- Retry mechanisms
+
+## Performance Considerations
+
+### Scanning Performance
+- Optimize camera frame processing
+- Debounce barcode detection
+- Cache frequently scanned products
+- Handle multiple rapid scans
+
+### Database Operations
+- Use transactions for sale completion
+- Batch inventory updates
+- Optimize product lookups
+- Implement proper indexing
+
+## Best Practices
+
+### User Experience
+- Provide clear visual feedback
+- Implement keyboard shortcuts
+- Support both scanning and manual entry
+- Maintain consistent UI patterns
+
+### Data Integrity
+- Validate all inputs
+- Use database transactions
+- Implement proper error recovery
+- Maintain audit trails
+
+### Security
+- Validate payment data
+- Secure sensitive information
+- Implement proper access controls
+- Log security events
+description:
+globs:
+alwaysApply: false
+---
